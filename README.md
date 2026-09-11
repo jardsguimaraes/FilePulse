@@ -1180,7 +1180,7 @@ Concorrência
 ## Core
 
 * [x] Implementar File Watcher
-* [ ] Implementar validação de arquivos
+* [x] Implementar validação de arquivos
 * [x] Implementar controle de arquivo completo
 * [ ] Implementar movimentação entre diretórios
 * [ ] Implementar Spring Batch
