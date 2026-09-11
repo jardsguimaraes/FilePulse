@@ -1182,7 +1182,7 @@ Concorrência
 * [x] Implementar File Watcher
 * [x] Implementar validação de arquivos
 * [x] Implementar controle de arquivo completo
-* [ ] Implementar movimentação entre diretórios
+* [x] Implementar movimentação entre diretórios
 * [ ] Implementar Spring Batch
 * [ ] Implementar Reader
 * [ ] Implementar Processor
