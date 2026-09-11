@@ -1,0 +1,24 @@
+spring:
+    application:
+        name: filepulse
+
+    datasource:
+        url: jdbc:postgresql://localhost:5432/filepulse
+        # jdbc-url: jdbc:postgresql://localhost:5432/filepulse
+        username: "${POSTGRES_USERNAME}"
+        password: "${POSTGRES_PASSWORD}"
+        driver-class-name: org.postgresql.Driver
+
+    jpa:
+        hibernate:
+            ddl-auto: update
+
+    batch:
+        jdbc:
+            initialize-schema: always
+        job:
+            enabled: true
+
+fileprocessor:
+    directory:
+        input-directory: ./files/entrada
