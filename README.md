@@ -8,7 +8,7 @@ O projeto combina **Java NIO WatchService, Spring Batch, PostgreSQL, Spring WebF
 
 ## 🎯 Objetivo
 
-O objetivo do **File Processor** é construir uma solução capaz de processar arquivos CSV contendo milhões de registros sem carregar todo o conteúdo em memória.
+O objetivo do **File Pulse** é construir uma solução capaz de processar arquivos CSV contendo milhões de registros sem carregar todo o conteúdo em memória.
 
 O fluxo principal é:
 
@@ -168,19 +168,24 @@ src/main/java/br/com/jards/fileprocessor
 │   ├── processor
 │   │   └── CustomerProcessor.java
 │   │
-│   └── writer
-│       └── CustomerWriter.java
+│   ├── writer
+│   │   └── CustomerWriter.java
+│   │
+│   └── listener
+│       └── RecordSkipListener.java
 │
 ├── domain
 │   ├── Customer.java
 │   ├── FileProcessing.java
 │   ├── FileProcessingLog.java
+│   ├── FileProcessingError.java
 │   └── ProcessingStatus.java
 │
 ├── repository
 │   ├── CustomerRepository.java
 │   ├── FileProcessingRepository.java
-│   └── FileProcessingLogRepository.java
+│   ├── FileProcessingLogRepository.java
+│   └── FileProcessingErrorRepository.java
 │
 ├── service
 │   ├── FileProcessingService.java
@@ -204,6 +209,7 @@ src/main/java/br/com/jards/fileprocessor
 │
 └── exception
     ├── InvalidFileException.java
+    ├── InvalidRecordException.java
     └── FileAlreadyProcessedException.java
 ```
 
@@ -379,7 +385,7 @@ Essa abordagem é fundamental para arquivos de grande volume.
 
 O tamanho do chunk é um dos principais parâmetros de performance do projeto.
 
-Inicialmente podem ser avaliados valores como:
+O benchmark do projeto executará os seguintes tamanhos de chunk:
 
 ```text
 100
@@ -387,20 +393,19 @@ Inicialmente podem ser avaliados valores como:
 1000
 2000
 5000
-10000
 ```
 
-Um arquivo com:
+O cenário de referência utiliza um arquivo com:
 
 ```text
 5.000.000 registros
 ```
 
-pode ser processado utilizando diferentes tamanhos de chunk.
+que será processado repetidamente com cada tamanho de chunk definido no benchmark.
 
 Quanto maior o chunk, menor tende a ser a quantidade de commits, porém maiores podem ser o consumo de memória e o tamanho das transações.
 
-Por isso, o projeto propõe realizar **benchmarks reais** para identificar o melhor equilíbrio entre throughput, memória, CPU, I/O e tempo de processamento.
+Por isso, o projeto executará **benchmarks reais** para identificar o melhor equilíbrio entre throughput, memória, CPU, I/O e tempo de processamento. O valor escolhido será externalizado em `fileprocessor.batch.chunk-size`.
 
 ---
 
@@ -436,7 +441,9 @@ BigDecimal
 9995.88
 ```
 
-Registros inválidos podem ser descartados através do mecanismo de `skip` do Spring Batch, dependendo da configuração do Job.
+Registros inválidos são tratados pelo mecanismo de tolerância a falhas do Spring Batch. O `CustomerProcessor` lança `InvalidRecordException` quando uma linha viola as regras de validação. O Step é configurado com `faultTolerant()` e `skip(InvalidRecordException.class)`, enquanto o `RecordSkipListener` persiste cada linha rejeitada em `file_processing_error`.
+
+O limite máximo de registros inválidos é externalizado na propriedade `fileprocessor.batch.skip-limit`. Enquanto o limite não for ultrapassado, o processamento continua. Ao excedê-lo, o Step e o Job assumem o status `FAILED`, o processamento é registrado no histórico e o arquivo é movido para `/erro`.
 
 ---
 
@@ -463,62 +470,120 @@ JDBC Batch
 PostgreSQL
 ```
 
-A implementação pode utilizar:
+A persistência é realizada com:
 
 ```java
 JdbcBatchItemWriter<Customer>
 ```
 
+O `JdbcBatchItemWriter` executa inserts em lote dentro da transação de cada chunk, reduzindo round-trips ao PostgreSQL e mantendo o commit alinhado ao limite transacional do Step.
+
 ---
 
 ## 🗄️ Banco de dados
 
-### Customer
+O banco de dados possui quatro estruturas de domínio principais, além das tabelas de metadados mantidas pelo próprio Spring Batch:
 
-Tabela responsável pelos dados processados:
-
-```sql
-CREATE TABLE customer (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(150) NOT NULL,
-    cpf VARCHAR(14) NOT NULL,
-    agency VARCHAR(10) NOT NULL,
-    account VARCHAR(20) NOT NULL,
-    amount NUMERIC(15,2) NOT NULL,
-    reference_month VARCHAR(7) NOT NULL,
-    created_at TIMESTAMP NOT NULL
-);
+```text
+file_processing
+      │
+      ├───────────────┐
+      │               │
+      ▼               ▼
+customer      file_processing_error
+      │
+      └───────────────┐
+                      ▼
+             file_processing_log
 ```
 
 ### File Processing
 
-Tabela responsável pelo controle dos arquivos:
+`file_processing` representa a identidade e o estado atual de cada arquivo recebido. O hash informado na primeira linha do CSV é persistido nessa tabela e possui restrição `UNIQUE`, tornando o PostgreSQL a última barreira contra processamento duplicado.
 
 ```sql
 CREATE TABLE file_processing (
     id BIGSERIAL PRIMARY KEY,
     file_name VARCHAR(255) NOT NULL,
     file_path VARCHAR(500),
+    file_hash VARCHAR(64) NOT NULL,
     status VARCHAR(30) NOT NULL,
     total_records BIGINT,
-    processed_records BIGINT,
-    error_records BIGINT,
+    processed_records BIGINT NOT NULL DEFAULT 0,
+    error_records BIGINT NOT NULL DEFAULT 0,
+    received_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
-    error_message TEXT
+    error_message TEXT,
+    CONSTRAINT uk_file_processing_hash UNIQUE (file_hash)
 );
 ```
 
+O `file_hash` deve conter o SHA-256 em representação hexadecimal, totalizando 64 caracteres. A aplicação valida esse formato antes de registrar o processamento.
+
+### Customer
+
+`customer` armazena os registros válidos importados pelo Batch. Cada linha processada mantém referência ao arquivo de origem por meio de `file_processing_id`.
+
+```sql
+CREATE TABLE customer (
+    id BIGSERIAL PRIMARY KEY,
+    file_processing_id BIGINT NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    cpf VARCHAR(14) NOT NULL,
+    agency VARCHAR(10) NOT NULL,
+    account VARCHAR(20) NOT NULL,
+    amount NUMERIC(15,2) NOT NULL,
+    reference_month VARCHAR(7) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_customer_file_processing
+        FOREIGN KEY (file_processing_id)
+        REFERENCES file_processing(id)
+);
+
+CREATE INDEX idx_customer_file_processing
+    ON customer(file_processing_id);
+```
+
+Essa associação garante rastreabilidade entre os dados persistidos e o arquivo que originou cada registro.
+
+### File Processing Error
+
+`file_processing_error` registra definitivamente cada linha rejeitada pelo processamento. A tabela faz parte da estratégia de tolerância a falhas do Spring Batch e não é apenas uma estrutura opcional.
+
+```sql
+CREATE TABLE file_processing_error (
+    id BIGSERIAL PRIMARY KEY,
+    file_processing_id BIGINT NOT NULL,
+    line_number BIGINT NOT NULL,
+    error_type VARCHAR(100) NOT NULL,
+    error_message TEXT NOT NULL,
+    raw_data TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_file_processing_error_file
+        FOREIGN KEY (file_processing_id)
+        REFERENCES file_processing(id),
+    CONSTRAINT uk_file_processing_error_line
+        UNIQUE (file_processing_id, line_number)
+);
+
+CREATE INDEX idx_file_processing_error_file
+    ON file_processing_error(file_processing_id);
+```
+
+A restrição composta `(file_processing_id, line_number)` evita que o mesmo erro seja gravado novamente durante um restart do Job.
+
 ### File Processing Log
 
-Tabela responsável pelo registro de auditoria do ciclo de vida dos arquivos. O hash informado na primeira linha do CSV é persistido nessa tabela e consultado antes do processamento para garantir a idempotência.
+`file_processing_log` mantém o histórico de eventos do ciclo de vida do arquivo. Diferentemente de `file_processing`, essa tabela **não possui unicidade por hash**, porque um mesmo processamento deve gerar vários eventos de auditoria.
 
 ```sql
 CREATE TABLE file_processing_log (
     id BIGSERIAL PRIMARY KEY,
-    file_processing_id BIGINT,
+    file_processing_id BIGINT NOT NULL,
     file_name VARCHAR(255) NOT NULL,
-    file_hash VARCHAR(255) NOT NULL,
+    file_hash VARCHAR(64) NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
     status VARCHAR(30) NOT NULL,
     message TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -527,11 +592,14 @@ CREATE TABLE file_processing_log (
         REFERENCES file_processing(id)
 );
 
-CREATE UNIQUE INDEX uk_file_processing_log_hash
+CREATE INDEX idx_file_processing_log_file
+    ON file_processing_log(file_processing_id);
+
+CREATE INDEX idx_file_processing_log_hash
     ON file_processing_log(file_hash);
 ```
 
-Para a validação de idempotência, a aplicação verifica a existência do `file_hash` antes de iniciar um novo processamento. Além da validação na aplicação, a restrição `UNIQUE` no banco impede que dois fluxos concorrentes registrem o mesmo hash. O registro ocorre antes da execução do Job, juntamente com o status inicial do arquivo.
+Eventos como `FILE_DETECTED`, `VALIDATED`, `PROCESSING_STARTED`, `RECORD_SKIPPED`, `PROCESSING_COMPLETED` e `PROCESSING_FAILED` são registrados nessa tabela. O hash permanece nos logs para auditoria e pesquisa, enquanto a garantia de idempotência pertence à restrição `UNIQUE` de `file_processing.file_hash`.
 
 ---
 
@@ -568,17 +636,21 @@ Ler primeira linha
 Obter hash
       │
       ▼
-Consultar file_processing_log
+Consultar file_processing
       │
       ├── hash existente -> rejeitar processamento duplicado
       │
-      └── hash inexistente -> registrar hash e continuar
+      └── hash inexistente -> inserir file_processing e continuar
                               │
                               ▼
                        restrição UNIQUE
 ```
 
-Dessa forma, o nome do arquivo não é utilizado como critério principal de idempotência. Mesmo que o mesmo conteúdo seja reenviado com outro nome, o hash permite identificar que ele já foi recebido e impedir um novo processamento indevido. A restrição `UNIQUE` sobre `file_hash` também protege o sistema contra condições de corrida quando houver múltiplos workers consumindo eventos via RabbitMQ.
+Dessa forma, o nome do arquivo não é utilizado como critério principal de idempotência. Mesmo que o mesmo conteúdo seja reenviado com outro nome, o hash identifica que ele já foi recebido e impede um novo processamento indevido.
+
+A verificação feita pela aplicação melhora o fluxo e permite retornar uma resposta controlada, mas a garantia definitiva é a restrição `UNIQUE` de `file_processing.file_hash`. Isso protege o sistema contra condições de corrida quando múltiplos workers consumirem eventos via RabbitMQ e tentarem reservar simultaneamente o mesmo arquivo.
+
+O `file_processing_log` recebe os eventos gerados após a criação do processamento, mas não é utilizado como trava de unicidade.
 
 Essa estratégia evita situações como:
 
@@ -596,7 +668,7 @@ sem controle sobre a origem do processamento.
 
 ## 🔁 Restart
 
-Uma das vantagens do Spring Batch é o suporte ao mecanismo de restart.
+O projeto utiliza o mecanismo de restart do Spring Batch para recuperar execuções interrompidas sem criar um novo processamento para o mesmo arquivo.
 
 Em um cenário onde:
 
@@ -610,7 +682,23 @@ e:
 3.200.000 processados
 ```
 
-e a aplicação é interrompida, o Job pode utilizar o estado persistido pelo Spring Batch para continuar o processamento, evitando necessariamente começar novamente do zero.
+se a aplicação for interrompida, o restart reutiliza o mesmo `file_processing`, o mesmo `file_hash` e a mesma `JobInstance`. O estado persistido nas tabelas de metadados do Spring Batch determina o ponto de retomada do Step.
+
+O endpoint `POST /api/files/{id}/retry` somente aceita processamentos em estado `FAILED`. Ele não cria um novo registro em `file_processing` nem tenta reservar novamente o hash; inicia uma nova `JobExecution` vinculada à mesma `JobInstance`.
+
+Essa separação é fundamental:
+
+```text
+novo arquivo com hash já existente
+        ↓
+REJEITADO por idempotência
+
+processamento existente com status FAILED
+        ↓
+RESTART da mesma JobInstance
+```
+
+Assim, idempotência impede duplicidade de ingestão e restart permite recuperação operacional sem violar essa garantia.
 
 ---
 
@@ -717,13 +805,13 @@ COMPLETED
 
 ## 📈 Dashboard
 
-A arquitetura permite a criação de um dashboard para acompanhamento dos Jobs.
+O projeto adotará um dashboard para acompanhamento dos Jobs, consumindo a API reativa e os eventos SSE definidos nesta arquitetura.
 
 Exemplo:
 
 ```text
 ┌─────────────────────────────────────────────┐
-│              FILE PROCESSOR                 │
+│              FILE PULSE                 │
 ├─────────────────────────────────────────────┤
 │                                             │
 │ clientes_001.csv                            │
@@ -746,7 +834,7 @@ Exemplo:
 
 ## 🚨 Tratamento de erros
 
-O projeto considera a possibilidade de erros individuais durante o processamento.
+O tratamento de erros segue uma estratégia definida de tolerância a falhas por registro. Erros de conteúdo não interrompem imediatamente o arquivo inteiro; eles são classificados, persistidos e contabilizados pelo Spring Batch.
 
 Exemplo:
 
@@ -756,28 +844,45 @@ Exemplo:
 Registro 3.481.229
         ↓
 CPF inválido
-```
-
-Dependendo da configuração do Batch, o registro pode ser ignorado e o processamento continuar.
-
-Ao final:
-
-```text
-Total:       5.000.000
-Processados: 4.999.873
-Erros:       127
-```
-
-Os erros podem ser armazenados em uma estrutura específica:
-
-```text
+        ↓
+InvalidRecordException
+        ↓
+skip
+        ↓
+RecordSkipListener
+        ↓
 file_processing_error
 ```
 
-com informações como:
+O fluxo adotado é:
 
 ```text
-file_id
+Reader
+  │
+  ▼
+Processor
+  │
+  ├── registro válido ───────────────► Writer ─► customer
+  │
+  └── registro inválido
+              │
+              ▼
+     InvalidRecordException
+              │
+              ▼
+            skip
+              │
+              ▼
+     RecordSkipListener
+              │
+              ▼
+   file_processing_error
+```
+
+Para cada linha rejeitada, o listener registra:
+
+```text
+file_processing_id
 line_number
 error_type
 error_message
@@ -785,11 +890,24 @@ raw_data
 created_at
 ```
 
+O contador `error_records` de `file_processing` é atualizado durante a execução. Enquanto a quantidade de skips permanecer dentro de `fileprocessor.batch.skip-limit`, o Job continua normalmente. Se o limite for ultrapassado, o Step falha, o `file_processing.status` passa para `FAILED`, um evento `PROCESSING_FAILED` é incluído em `file_processing_log` e o arquivo é movido para `/erro`.
+
+Ao concluir dentro do limite permitido, o arquivo pode apresentar registros processados e rejeitados no mesmo resultado:
+
+```text
+Total:       5.000.000
+Processados: 4.999.873
+Erros:       127
+Status:      COMPLETED
+```
+
+A tabela `file_processing_error` mantém o detalhe dos 127 registros rejeitados para auditoria e diagnóstico.
+
 ---
 
 ## 🌐 API
 
-A API inicial pode disponibilizar os seguintes endpoints:
+A API disponibiliza os seguintes endpoints:
 
 ### Listar arquivos
 
@@ -825,9 +943,7 @@ GET /actuator/health
 
 ## 🔒 Segurança
 
-Uma evolução planejada é a utilização do Spring Security.
-
-Possíveis perfis:
+A camada de segurança será implementada com Spring Security e utilizará três perfis:
 
 ```text
 ADMIN
@@ -835,21 +951,23 @@ OPERATOR
 VIEWER
 ```
 
-Com controle de acesso para operações como:
+A política de autorização será:
 
-```text
-POST /api/files
-GET  /api/files
-GET  /api/files/{id}
-GET  /api/files/{id}/events
-POST /api/files/{id}/retry
-```
+| Operação | ADMIN | OPERATOR | VIEWER |
+| --- | :---: | :---: | :---: |
+| `GET /api/files` | ✅ | ✅ | ✅ |
+| `GET /api/files/{id}` | ✅ | ✅ | ✅ |
+| `GET /api/files/{id}/events` | ✅ | ✅ | ✅ |
+| `POST /api/files/{id}/retry` | ✅ | ✅ | ❌ |
+| Endpoints administrativos | ✅ | ❌ | ❌ |
+
+A entrada de arquivos ocorre pelo diretório monitorado, portanto não é definido um endpoint de upload nessa arquitetura.
 
 ---
 
 ## 📊 Observabilidade
 
-O projeto prevê uma camada de observabilidade utilizando:
+A camada de observabilidade do projeto é composta por:
 
 ```text
 Spring Boot Actuator
@@ -878,7 +996,7 @@ Métricas de interesse:
 
 ## 🐳 Docker Compose
 
-Para o ambiente de desenvolvimento, a arquitetura pode ser executada através do Docker Compose.
+O ambiente de desenvolvimento é orquestrado através do Docker Compose.
 
 ### Ambiente inicial
 
@@ -1006,7 +1124,7 @@ Um cenário de referência é:
 5.000.000 registros
 ```
 
-O benchmark pode avaliar diferentes configurações:
+O benchmark executará as seguintes configurações:
 
 | Teste | Chunk |
 | ----- | ----: |
@@ -1123,7 +1241,7 @@ Concorrência
 
 # 🎓 Objetivo técnico
 
-Mais do que demonstrar o uso isolado de tecnologias, o **File Processor** busca demonstrar decisões de engenharia aplicadas a um cenário de processamento de alto volume.
+Mais do que demonstrar o uso isolado de tecnologias, o **File Pulse** busca demonstrar decisões de engenharia aplicadas a um cenário de processamento de alto volume.
 
 Os principais conceitos explorados são:
 
@@ -1206,4 +1324,4 @@ Backend Developer | Java | Spring Boot | Quarkus
 
 ---
 
-> **File Processor** — processamento de arquivos em escala, do filesystem ao processamento distribuído.
+> **File Pulse** — processamento de arquivos em escala, do filesystem ao processamento distribuído.
