@@ -135,6 +135,36 @@ O processamento utiliza diretórios distintos para representar o ciclo de vida d
 
 O arquivo é retirado de `/entrada` antes do processamento para evitar que permaneça no diretório de entrada enquanto o Batch estiver trabalhando nele. Os registros de acompanhamento e auditoria não são armazenados no filesystem: eles são persistidos em uma tabela de logs no PostgreSQL.
 
+### Configuração e inicialização dos diretórios
+
+Os caminhos dos diretórios são externalizados em `application.yml` e mapeados pela classe `FileStorageProperties`.
+
+```yaml
+fileprocessor:
+  directory:
+    input-directory: ./files/entrada
+    processing-directory: ./files/processamento
+    processed-directory: ./files/processados
+    error-directory: ./files/erro
+```
+
+A classe `FileStorageInitializer` é responsável por garantir, durante a inicialização da aplicação, que toda a estrutura de diretórios exista.
+
+```text
+FileStorageProperties
+        │
+        ▼
+FileStorageInitializer
+        │
+        ├── entrada/
+        ├── processamento/
+        ├── processados/
+        └── erro/
+```
+
+O `DirectoryWatcher` apenas monitora o diretório de entrada, enquanto o `FileMovementService` encapsula a movimentação dos arquivos entre os diretórios configurados.
+
+
 ---
 
 ## 📦 Estrutura do projeto
@@ -147,12 +177,13 @@ src/main/java/br/com/jards/filepulse
 ├── config
 │   ├── BatchConfig.java
 │   ├── WebFluxConfig.java
-│   └── JacksonConfig.java
+│   ├── JacksonConfig.java
+│   ├── FileStorageProperties.java
+│   └── FileStorageInitializer.java
 │
 ├── watcher
 │   ├── DirectoryWatcher.java
-│   ├── FileEventHandler.java
-│   └── FileWatcherProperties.java
+│   └── FileEventHandler.java
 │
 ├── batch
 │   ├── job
@@ -190,7 +221,8 @@ src/main/java/br/com/jards/filepulse
 ├── service
 │   ├── FileProcessingService.java
 │   ├── JobService.java
-│   └── FileValidationService.java
+│   ├── FileValidationService.java
+│   └── FileMovementService.java
 │
 ├── web
 │   ├── FileProcessingController.java
@@ -210,7 +242,8 @@ src/main/java/br/com/jards/filepulse
 └── exception
     ├── InvalidFileException.java
     ├── InvalidRecordException.java
-    └── FileAlreadyProcessedException.java
+    ├── FileAlreadyProcessedException.java
+    └── FileMovementException.java
 ```
 
 ---
@@ -232,40 +265,43 @@ Quando um arquivo CSV é disponibilizado no diretório `/entrada`, o sistema exe
 4. Verificação de arquivo completo
           │
           ▼
-5. Leitura e validação do hash da primeira linha
+5. Validação do cabeçalho/layout
           │
           ▼
-6. Verificação de idempotência no banco
+6. Cálculo do SHA-256 do arquivo completo
           │
           ▼
-7. Registro do processamento e reserva do hash
+7. Verificação de idempotência no banco
           │
           ▼
-8. Arquivo é movido para /processamento
+8. Registro do processamento e reserva do hash
           │
           ▼
-9. Spring Batch Job é iniciado
+9. Arquivo é movido para /processamento
           │
           ▼
-10. Reader lê os registros a partir da terceira linha
+10. Spring Batch Job é iniciado
           │
           ▼
-11. Processor valida e transforma
+11. Reader lê os registros a partir da segunda linha
           │
           ▼
-12. Writer persiste em lote
+12. Processor valida e transforma
           │
           ▼
-13. Progresso é atualizado
+13. Writer persiste em lote
           │
           ▼
-14. Eventos são publicados
+14. Progresso é atualizado
           │
           ▼
-15. Job é finalizado
+15. Eventos são publicados
           │
           ▼
-16. Arquivo é movido para /processados
+16. Job é finalizado
+          │
+          ▼
+17. Arquivo é movido para /processados
 ```
 
 Em caso de falha:
@@ -299,7 +335,7 @@ João da Silva|12345678901|1234|123456-7|9995.88|2026-09
 Maria Souza|98765432100|5678|987654-3|1250.50|2026-09
 ```
 
-O SHA-256 é calculado pelo próprio File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada. O hash é consultado no banco de dados para impedir o reprocessamento indevido do mesmo arquivo. Após essa validação, o `FlatFileItemReader` inicia a leitura dos registros a partir da terceira linha.
+O SHA-256 é calculado pelo próprio File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada. O hash é consultado no banco de dados para impedir o reprocessamento indevido do mesmo arquivo. Após essa validação, o `FlatFileItemReader` ignora o cabeçalho e inicia a leitura dos registros a partir da segunda linha.
 
 Os campos são convertidos para o domínio:
 
@@ -328,6 +364,39 @@ Mês de Referência
   ↓
 referenceMonth
 ```
+
+---
+
+## 🚚 Movimentação de arquivos
+
+A movimentação entre diretórios é encapsulada pelo `FileMovementService`, mantendo essa responsabilidade fora do `DirectoryWatcher` e do `FileEventHandler`.
+
+```text
+DirectoryWatcher
+      │
+      ▼
+FileEventHandler
+      │
+      ├── FileValidationService
+      │
+      └── FileMovementService
+                │
+                ▼
+        /processamento
+```
+
+O serviço utiliza Java NIO `Files.move(...)` e os caminhos fornecidos por `FileStorageProperties`.
+
+Falhas de I/O durante a movimentação são convertidas de `IOException` para `FileMovementException`, evitando que detalhes de infraestrutura se espalhem para as demais camadas da aplicação.
+
+```text
+IOException
+    │
+    ▼
+FileMovementException
+```
+
+O sistema não sobrescreve silenciosamente arquivos já existentes no diretório de destino. Conflitos de nome devem ser tratados explicitamente pela aplicação.
 
 ---
 
@@ -497,7 +566,7 @@ customer      file_processing_error
 
 ### File Processing
 
-`file_processing` representa a identidade e o estado atual de cada arquivo recebido. O hash informado na pelo cálculo do File Pulse após confirmação que a gravação foi concluída é persistido nessa tabela e possui restrição `UNIQUE`, tornando o PostgreSQL a última barreira contra processamento duplicado.
+`file_processing` representa a identidade e o estado atual de cada arquivo recebido. O SHA-256 calculado pelo próprio File Pulse, após a confirmação de que a gravação do arquivo foi concluída, é persistido nessa tabela e possui restrição `UNIQUE`, tornando o PostgreSQL a última barreira contra processamento duplicado.
 
 ```sql
 CREATE TABLE file_processing (
@@ -517,7 +586,7 @@ CREATE TABLE file_processing (
 );
 ```
 
-O `file_hash` deve conter o SHA-256 em representação hexadecimal, totalizando 64 caracteres. A aplicação valida esse formato antes de registrar o processamento.
+O `file_hash` armazena o SHA-256 calculado pelo próprio File Pulse em representação hexadecimal, totalizando 64 caracteres.
 
 ### Customer
 
@@ -603,7 +672,7 @@ Eventos como `FILE_DETECTED`, `VALIDATED`, `PROCESSING_STARTED`, `RECORD_SKIPPED
 
 ## 🔐 Idempotência
 
-O processamento deve impedir que o mesmo arquivo seja processado indevidamente mais de uma vez. A idempotência faz parte do contrato do arquivo: **O SHA-256 é calculado pelo próprio File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada**.
+O processamento deve impedir que o mesmo arquivo seja processado indevidamente mais de uma vez. A idempotência utiliza o conteúdo do próprio arquivo como identidade técnica: **o SHA-256 é calculado pelo File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada**.
 
 Estrutura:
 
@@ -1193,7 +1262,7 @@ Concorrência
 ## Confiabilidade
 
 * [ ] Implementar idempotência
-* [ ] Implementar calculado pelo próprio File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada
+* [ ] Implementar cálculo SHA-256 do arquivo completo
 * [ ] Implementar tratamento de duplicidade
 * [ ] Implementar skip de registros inválidos
 * [ ] Implementar armazenamento de erros
@@ -1273,6 +1342,7 @@ O projeto também permite comparar diferentes estratégias arquiteturais e medir
 
 * Java NIO
 * WatchService
+* Java NIO `Files.move`
 * Spring Boot
 * Spring Batch
 * Chunk Processing
