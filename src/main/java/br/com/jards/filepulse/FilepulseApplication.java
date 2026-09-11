@@ -4,10 +4,10 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
-import br.com.jards.filepulse.watcher.FileWatcherProperties;
+import br.com.jards.filepulse.config.FileStorageProperties;
 
 @SpringBootApplication
-@EnableConfigurationProperties(FileWatcherProperties.class)
+@EnableConfigurationProperties(FileStorageProperties.class)
 public class FilepulseApplication {
 
 	public static void main(String[] args) {

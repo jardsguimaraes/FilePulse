@@ -22,3 +22,6 @@ spring:
 fileprocessor:
     directory:
         input-directory: ./files/entrada
+        processing-directory: ./files/processamento
+        processed-directory: ./files/processados
+        error-directory: ./files/erro

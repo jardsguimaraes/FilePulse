@@ -10,15 +10,16 @@ import java.nio.file.WatchService;
 
 import org.springframework.stereotype.Component;
 
+import br.com.jards.filepulse.config.FileStorageProperties;
 import jakarta.annotation.PostConstruct;
 
 @Component
 public class DirectoryWatcher {
 
-    private final FileWatcherProperties properties;
+    private final FileStorageProperties properties;
     private final FileEventHandler handler;
 
-    public DirectoryWatcher(FileWatcherProperties properties, FileEventHandler handler) {
+    public DirectoryWatcher(FileStorageProperties properties, FileEventHandler handler) {
         this.properties = properties;
         this.handler = handler;
     }
@@ -26,8 +27,6 @@ public class DirectoryWatcher {
     @PostConstruct
     public void start() throws IOException {
         var directory = Path.of(properties.getInputDirectory());
-
-        Files.createDirectories(directory);
 
         var watchService = FileSystems.getDefault().newWatchService();
         directory.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
@@ -55,7 +54,7 @@ public class DirectoryWatcher {
                 if (!valid) {
                     break;
                 }
-            } catch (Exception e) {
+            } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             }
