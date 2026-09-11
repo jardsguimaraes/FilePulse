@@ -140,9 +140,9 @@ O arquivo é retirado de `/entrada` antes do processamento para evitar que perma
 ## 📦 Estrutura do projeto
 
 ```text
-src/main/java/br/com/jards/fileprocessor
+src/main/java/br/com/jards/filepulse
 │
-├── FileProcessorApplication.java
+├── FilePulseApplication.java
 │
 ├── config
 │   ├── BatchConfig.java
