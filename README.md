@@ -284,10 +284,9 @@ Em caso de falha:
 
 ## 📄 Formato do arquivo CSV
 
-O arquivo utilizado pelo processamento possui três partes: o hash de identificação na primeira linha, o cabeçalho na segunda linha e os registros a partir da terceira linha.
+O arquivo utilizado pelo processamento possui duas partes: o cabeçalho na primeira linha e os registros a partir da segunda linha.
 
 ```text
-<hash>
 Nome|CPF|Agência|Conta|Valor|Mês de Referência
 <registros>
 ```
@@ -295,13 +294,12 @@ Nome|CPF|Agência|Conta|Valor|Mês de Referência
 Exemplo:
 
 ```text
-hash256325khjgfg...
 Nome|CPF|Agência|Conta|Valor|Mês de Referência
 João da Silva|12345678901|1234|123456-7|9995.88|2026-09
 Maria Souza|98765432100|5678|987654-3|1250.50|2026-09
 ```
 
-A primeira linha é lida pela etapa de validação antes do início do Job. O hash é consultado no banco de dados para impedir o reprocessamento indevido do mesmo arquivo. Após essa validação, o `FlatFileItemReader` inicia a leitura dos registros a partir da terceira linha.
+O SHA-256 é calculado pelo próprio File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada. O hash é consultado no banco de dados para impedir o reprocessamento indevido do mesmo arquivo. Após essa validação, o `FlatFileItemReader` inicia a leitura dos registros a partir da terceira linha.
 
 Os campos são convertidos para o domínio:
 
@@ -349,7 +347,7 @@ Writer
 
 ### Reader
 
-O `FlatFileItemReader<Customer>` realiza a leitura dos registros do CSV a partir da terceira linha, pois a primeira contém o hash do arquivo e a segunda contém o cabeçalho.
+O `FlatFileItemReader<Customer>` realiza a leitura dos registros do CSV a partir da segunda linha, pois a primeira contém o cabeçalho.
 
 O arquivo não é carregado integralmente em memória.
 
@@ -499,7 +497,7 @@ customer      file_processing_error
 
 ### File Processing
 
-`file_processing` representa a identidade e o estado atual de cada arquivo recebido. O hash informado na primeira linha do CSV é persistido nessa tabela e possui restrição `UNIQUE`, tornando o PostgreSQL a última barreira contra processamento duplicado.
+`file_processing` representa a identidade e o estado atual de cada arquivo recebido. O hash informado na pelo cálculo do File Pulse após confirmação que a gravação foi concluída é persistido nessa tabela e possui restrição `UNIQUE`, tornando o PostgreSQL a última barreira contra processamento duplicado.
 
 ```sql
 CREATE TABLE file_processing (
@@ -605,20 +603,18 @@ Eventos como `FILE_DETECTED`, `VALIDATED`, `PROCESSING_STARTED`, `RECORD_SKIPPED
 
 ## 🔐 Idempotência
 
-O processamento deve impedir que o mesmo arquivo seja processado indevidamente mais de uma vez. A idempotência faz parte do contrato do arquivo: **a primeira linha do CSV contém o hash utilizado para identificar o processamento**.
+O processamento deve impedir que o mesmo arquivo seja processado indevidamente mais de uma vez. A idempotência faz parte do contrato do arquivo: **O SHA-256 é calculado pelo próprio File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada**.
 
 Estrutura:
 
 ```text
-Linha 1 -> hash do arquivo
-Linha 2 -> cabeçalho
-Linha 3 em diante -> registros
+Linha 1 -> cabeçalho
+Linha 2 em diante -> registros
 ```
 
 Exemplo:
 
 ```text
-hash256325khjgfg...
 Nome|CPF|Agência|Conta|Valor|Mês de Referência
 João da Silva|12345678901|1234|123456-7|9995.88|2026-09
 Maria Souza|98765432100|5678|987654-3|1250.50|2026-09
@@ -1183,9 +1179,9 @@ Concorrência
 
 ## Core
 
-* [ ] Implementar File Watcher
-* [ ] Implementar validação de arquivos
-* [ ] Implementar controle de arquivo completo
+* [ X ] Implementar File Watcher
+* [ X ] Implementar validação de arquivos
+* [ X ] Implementar controle de arquivo completo
 * [ ] Implementar movimentação entre diretórios
 * [ ] Implementar Spring Batch
 * [ ] Implementar Reader
@@ -1197,7 +1193,7 @@ Concorrência
 ## Confiabilidade
 
 * [ ] Implementar idempotência
-* [ ] Implementar leitura e validação do hash da primeira linha do arquivo
+* [ ] Implementar calculado pelo próprio File Pulse sobre o arquivo completo após a confirmação de que a gravação foi finalizada
 * [ ] Implementar tratamento de duplicidade
 * [ ] Implementar skip de registros inválidos
 * [ ] Implementar armazenamento de erros
