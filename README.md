@@ -1,8 +1,8 @@
-# File Processor
+# File Pulse
 
 Plataforma de processamento assíncrono de arquivos CSV de alto volume, desenvolvida com **Java 21 e Spring Boot**, capaz de detectar automaticamente a chegada de arquivos, processar milhões de registros de forma eficiente e disponibilizar o progresso do processamento em tempo real.
 
-O projeto combina **Java NIO WatchService, Spring Batch, PostgreSQL, Spring WebFlux e Server-Sent Events (SSE)**, com uma arquitetura preparada para evoluir posteriormente para processamento distribuído utilizando RabbitMQ.
+O projeto combina **Java NIO WatchService, Spring Batch, PostgreSQL, Spring WebFlux, Server-Sent Events (SSE) e RabbitMQ**, compondo uma arquitetura que parte do processamento local e avança, em uma etapa posterior do próprio projeto, para processamento distribuído orientado a eventos.
 
 ---
 
@@ -73,7 +73,7 @@ A proposta é demonstrar conceitos importantes de engenharia backend, especialme
 * Testes com JUnit e Testcontainers
 * Containerização com Docker
 * Documentação da API com OpenAPI/Swagger
-* Evolução arquitetural planejada com RabbitMQ
+* Mensageria e processamento distribuído com RabbitMQ
 
 ---
 
@@ -98,7 +98,7 @@ A proposta é demonstrar conceitos importantes de engenharia backend, especialme
 | Micrometer            | Métricas                                |
 | Prometheus            | Coleta de métricas                      |
 | Grafana               | Visualização                            |
-| RabbitMQ              | Mensageria — evolução futura            |
+| RabbitMQ              | Mensageria e distribuição do processamento |
 
 ---
 
@@ -111,8 +111,7 @@ O processamento utiliza diretórios distintos para representar o ciclo de vida d
 ├── entrada/
 ├── processamento/
 ├── processados/
-├── erro/
-└── logs/
+└── erro/
 ```
 
 ### Ciclo de vida
@@ -134,7 +133,7 @@ O processamento utiliza diretórios distintos para representar o ciclo de vida d
        └────────────┘   └────────────┘
 ```
 
-O arquivo é retirado de `/entrada` antes do processamento para evitar que permaneça no diretório de entrada enquanto o Batch estiver trabalhando nele.
+O arquivo é retirado de `/entrada` antes do processamento para evitar que permaneça no diretório de entrada enquanto o Batch estiver trabalhando nele. Os registros de acompanhamento e auditoria não são armazenados no filesystem: eles são persistidos em uma tabela de logs no PostgreSQL.
 
 ---
 
@@ -175,11 +174,13 @@ src/main/java/br/com/jards/fileprocessor
 ├── domain
 │   ├── Customer.java
 │   ├── FileProcessing.java
+│   ├── FileProcessingLog.java
 │   └── ProcessingStatus.java
 │
 ├── repository
 │   ├── CustomerRepository.java
-│   └── FileProcessingRepository.java
+│   ├── FileProcessingRepository.java
+│   └── FileProcessingLogRepository.java
 │
 ├── service
 │   ├── FileProcessingService.java
@@ -194,6 +195,12 @@ src/main/java/br/com/jards/fileprocessor
 ├── event
 │   ├── FileDetectedEvent.java
 │   └── BatchProgressEvent.java
+│
+├── messaging
+│   ├── publisher
+│   │   └── FileCreatedPublisher.java
+│   └── consumer
+│       └── FileCreatedConsumer.java
 │
 └── exception
     ├── InvalidFileException.java
@@ -219,37 +226,40 @@ Quando um arquivo CSV é disponibilizado no diretório `/entrada`, o sistema exe
 4. Verificação de arquivo completo
           │
           ▼
-5. Verificação de duplicidade
+5. Leitura e validação do hash da primeira linha
           │
           ▼
-6. Arquivo é movido para /processamento
+6. Verificação de idempotência no banco
           │
           ▼
-7. Registro do processamento é criado
+7. Registro do processamento e reserva do hash
           │
           ▼
-8. Spring Batch Job é iniciado
+8. Arquivo é movido para /processamento
           │
           ▼
-9. Reader lê os registros
+9. Spring Batch Job é iniciado
           │
           ▼
-10. Processor valida e transforma
+10. Reader lê os registros a partir da terceira linha
           │
           ▼
-11. Writer persiste em lote
+11. Processor valida e transforma
           │
           ▼
-12. Progresso é atualizado
+12. Writer persiste em lote
           │
           ▼
-13. Eventos são publicados
+13. Progresso é atualizado
           │
           ▼
-14. Job é finalizado
+14. Eventos são publicados
           │
           ▼
-15. Arquivo é movido para /processados
+15. Job é finalizado
+          │
+          ▼
+16. Arquivo é movido para /processados
 ```
 
 Em caso de falha:
@@ -268,18 +278,24 @@ Em caso de falha:
 
 ## 📄 Formato do arquivo CSV
 
-O arquivo utilizado pelo processamento possui a seguinte estrutura:
+O arquivo utilizado pelo processamento possui três partes: o hash de identificação na primeira linha, o cabeçalho na segunda linha e os registros a partir da terceira linha.
 
 ```text
+<hash>
 Nome|CPF|Agência|Conta|Valor|Mês de Referência
+<registros>
 ```
 
 Exemplo:
 
 ```text
+hash256325khjgfg...
+Nome|CPF|Agência|Conta|Valor|Mês de Referência
 João da Silva|12345678901|1234|123456-7|9995.88|2026-09
 Maria Souza|98765432100|5678|987654-3|1250.50|2026-09
 ```
+
+A primeira linha é lida pela etapa de validação antes do início do Job. O hash é consultado no banco de dados para impedir o reprocessamento indevido do mesmo arquivo. Após essa validação, o `FlatFileItemReader` inicia a leitura dos registros a partir da terceira linha.
 
 Os campos são convertidos para o domínio:
 
@@ -327,7 +343,7 @@ Writer
 
 ### Reader
 
-O `FlatFileItemReader<Customer>` realiza a leitura dos registros do CSV.
+O `FlatFileItemReader<Customer>` realiza a leitura dos registros do CSV a partir da terceira linha, pois a primeira contém o hash do arquivo e a segunda contém o cabeçalho.
 
 O arquivo não é carregado integralmente em memória.
 
@@ -493,28 +509,76 @@ CREATE TABLE file_processing (
 );
 ```
 
+### File Processing Log
+
+Tabela responsável pelo registro de auditoria do ciclo de vida dos arquivos. O hash informado na primeira linha do CSV é persistido nessa tabela e consultado antes do processamento para garantir a idempotência.
+
+```sql
+CREATE TABLE file_processing_log (
+    id BIGSERIAL PRIMARY KEY,
+    file_processing_id BIGINT,
+    file_name VARCHAR(255) NOT NULL,
+    file_hash VARCHAR(255) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    message TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_file_processing_log_file
+        FOREIGN KEY (file_processing_id)
+        REFERENCES file_processing(id)
+);
+
+CREATE UNIQUE INDEX uk_file_processing_log_hash
+    ON file_processing_log(file_hash);
+```
+
+Para a validação de idempotência, a aplicação verifica a existência do `file_hash` antes de iniciar um novo processamento. Além da validação na aplicação, a restrição `UNIQUE` no banco impede que dois fluxos concorrentes registrem o mesmo hash. O registro ocorre antes da execução do Job, juntamente com o status inicial do arquivo.
+
 ---
 
 ## 🔐 Idempotência
 
-O processamento deve evitar que o mesmo arquivo seja processado indevidamente mais de uma vez.
+O processamento deve impedir que o mesmo arquivo seja processado indevidamente mais de uma vez. A idempotência faz parte do contrato do arquivo: **a primeira linha do CSV contém o hash utilizado para identificar o processamento**.
 
-Uma possibilidade é utilizar:
-
-```text
-file_name
-    +
-checksum
-```
-
-Por exemplo:
+Estrutura:
 
 ```text
-clientes.csv
-SHA-256 = ABC123...
+Linha 1 -> hash do arquivo
+Linha 2 -> cabeçalho
+Linha 3 em diante -> registros
 ```
 
-Se o mesmo arquivo for recebido novamente e o checksum já estiver registrado como processado, o sistema poderá ignorar a nova tentativa.
+Exemplo:
+
+```text
+hash256325khjgfg...
+Nome|CPF|Agência|Conta|Valor|Mês de Referência
+João da Silva|12345678901|1234|123456-7|9995.88|2026-09
+Maria Souza|98765432100|5678|987654-3|1250.50|2026-09
+```
+
+Antes de iniciar o Spring Batch Job, o sistema executa o seguinte fluxo:
+
+```text
+Arquivo detectado
+      │
+      ▼
+Ler primeira linha
+      │
+      ▼
+Obter hash
+      │
+      ▼
+Consultar file_processing_log
+      │
+      ├── hash existente -> rejeitar processamento duplicado
+      │
+      └── hash inexistente -> registrar hash e continuar
+                              │
+                              ▼
+                       restrição UNIQUE
+```
+
+Dessa forma, o nome do arquivo não é utilizado como critério principal de idempotência. Mesmo que o mesmo conteúdo seja reenviado com outro nome, o hash permite identificar que ele já foi recebido e impedir um novo processamento indevido. A restrição `UNIQUE` sobre `file_hash` também protege o sistema contra condições de corrida quando houver múltiplos workers consumindo eventos via RabbitMQ.
 
 Essa estratégia evita situações como:
 
@@ -816,7 +880,7 @@ Métricas de interesse:
 
 Para o ambiente de desenvolvimento, a arquitetura pode ser executada através do Docker Compose.
 
-### Fase inicial
+### Ambiente inicial
 
 ```text
 docker-compose
@@ -825,7 +889,7 @@ docker-compose
 └── postgres
 ```
 
-### Evolução
+### Arquitetura completa
 
 ```text
 docker-compose
@@ -839,9 +903,9 @@ docker-compose
 
 ---
 
-# 🏗️ Evolução arquitetural
+# 🏗️ Arquitetura por etapas
 
-O projeto foi pensado para evoluir em três fases.
+O projeto é desenvolvido de forma incremental em três etapas. O RabbitMQ faz parte da arquitetura definida para o projeto e é introduzido na etapa de processamento distribuído.
 
 ## Fase 1 — Fundamentos
 
@@ -885,7 +949,7 @@ Permitir o acompanhamento do processamento em tempo real.
 
 ---
 
-## Fase 3 — Arquitetura distribuída
+## Fase 3 — Arquitetura distribuída com RabbitMQ
 
 ```text
 ┌──────────────┐
@@ -924,7 +988,7 @@ Batch  Batch  Batch
    Dashboard
 ```
 
-Com RabbitMQ, o watcher passa a publicar apenas o evento de chegada do arquivo.
+Na etapa distribuída, o RabbitMQ passa a intermediar a comunicação entre a detecção do arquivo e os workers de processamento. O watcher publica o evento de chegada do arquivo.
 
 Os workers ficam responsáveis por consumir os eventos e iniciar o processamento.
 
@@ -1015,7 +1079,7 @@ Concorrência
 ## Confiabilidade
 
 * [ ] Implementar idempotência
-* [ ] Implementar checksum SHA-256
+* [ ] Implementar leitura e validação do hash da primeira linha do arquivo
 * [ ] Implementar tratamento de duplicidade
 * [ ] Implementar skip de registros inválidos
 * [ ] Implementar armazenamento de erros
@@ -1106,7 +1170,7 @@ O projeto também permite comparar diferentes estratégias arquiteturais e medir
 * Spring WebFlux
 * Server-Sent Events
 * Idempotência
-* Checksum
+* Hash de idempotência
 * Restartability
 * Skip / Fault Tolerance
 * Event-driven architecture
@@ -1124,7 +1188,7 @@ O projeto também permite comparar diferentes estratégias arquiteturais e medir
 
 🚧 **Em desenvolvimento**
 
-O projeto está sendo desenvolvido de forma incremental, começando pela implementação do processamento local e evoluindo posteriormente para comunicação reativa, observabilidade e arquitetura distribuída.
+O projeto está sendo desenvolvido de forma incremental. A arquitetura alvo contempla processamento local, comunicação reativa, observabilidade e processamento distribuído com RabbitMQ, implementados progressivamente ao longo das etapas do projeto.
 
 ---
 
