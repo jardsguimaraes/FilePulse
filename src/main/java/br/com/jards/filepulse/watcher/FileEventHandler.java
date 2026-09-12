@@ -6,18 +6,22 @@ import org.springframework.stereotype.Component;
 
 import br.com.jards.filepulse.service.FileMovementService;
 import br.com.jards.filepulse.service.FileValidationService;
+import br.com.jards.filepulse.service.JobService;
 import lombok.extern.log4j.Log4j2;
 
 @Component
 @Log4j2
 public class FileEventHandler {
 
+    private final JobService jobService;
     private final FileValidationService fileValidationService;
     private final FileMovementService fileMovementService;
 
-    public FileEventHandler(FileValidationService fileValidationService, FileMovementService fileMovementService) {
+    public FileEventHandler(FileValidationService fileValidationService, FileMovementService fileMovementService,
+            JobService jobService) {
         this.fileValidationService = fileValidationService;
         this.fileMovementService = fileMovementService;
+        this.jobService = jobService;
     }
 
     public void onFileCreated(Path file) {
@@ -42,6 +46,8 @@ public class FileEventHandler {
 
         log.info("Arquivo pronto para processamento {}", file);
 
-        fileMovementService.moveToProcessing(file);
+        var movedFile = fileMovementService.moveToProcessing(file);
+        jobService.start(movedFile);
+
     }
 }
