@@ -3,11 +3,13 @@ package br.com.jards.filepulse.batch.step;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.repeat.RepeatStatus;
+import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import br.com.jards.filepulse.batch.model.CustomerCsvRecord;
 import lombok.extern.log4j.Log4j2;
 
 @Configuration
@@ -23,13 +25,15 @@ public class CustomerProcessingStepConfig {
     }
 
     @Bean
-    public Step customerProcessingStep() {
+    public Step customerProcessingStep(
+            @Qualifier("customerItemReader") FlatFileItemReader<CustomerCsvRecord> customerItemReader) {
         return new StepBuilder("customerProcessingStep", jobRepository)
-                .tasklet(
-                        (contribution, chunkContext) -> {
-                            log.info("CustomerProcessingStep executado com sucesso");
-                            return RepeatStatus.FINISHED;
-                        }, transactionManager)
+                .<CustomerCsvRecord, CustomerCsvRecord>chunk(10, transactionManager)
+                .reader(customerItemReader)
+                .writer(chuck -> {
+                    chuck.getItems()
+                            .forEach(item -> log.info("Registro lido: {}", item));
+                })
                 .build();
     }
 }
