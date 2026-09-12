@@ -38,7 +38,7 @@ public class CustomerProcessingStepConfig {
                 .processor(customerItemProcessor)
                 .faultTolerant()
                 .skip(InvalidRecordException.class)
-                .skipLimit(10)
+                .skipLimit(20)
                 .listener(recordSkipListener)
                 .writer(chuck -> {
                     chuck.getItems()

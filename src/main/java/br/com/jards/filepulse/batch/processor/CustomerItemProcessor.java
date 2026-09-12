@@ -1,7 +1,5 @@
 package br.com.jards.filepulse.batch.processor;
 
-import java.math.BigDecimal;
-
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
@@ -18,19 +16,17 @@ public class CustomerItemProcessor implements ItemProcessor<CustomerCsvRecord, C
     @Nullable
     public Customer process(@NonNull CustomerCsvRecord item) throws Exception {
 
-        CustomerItemProcessorValidation.validate(item);
+        var validation = new CustomerItemProcessorValidation();
+        validation.validate(item);
+        validation.validateReferenceMonth(item.referenceMonth());
 
         return new Customer(
                 item.name(),
-                normalizeCpf(item.cpf()),
+                validation.processCpf(item.cpf()),
                 item.agency(),
                 item.account(),
-                new BigDecimal(item.value()),
+                validation.parseValue(item.value()),
                 item.referenceMonth());
-    }
-
-    private String normalizeCpf(String cpf) {
-        return cpf.replaceAll("\\D", "");
     }
 
 }
