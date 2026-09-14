@@ -1,4 +1,4 @@
-package br.com.jards.filepulse.service;
+package br.com.jards.filepulse.batch.service;
 
 import java.io.IOException;
 import java.nio.file.Files;

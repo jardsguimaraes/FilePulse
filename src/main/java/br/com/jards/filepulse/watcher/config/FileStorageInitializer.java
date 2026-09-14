@@ -1,4 +1,4 @@
-package br.com.jards.filepulse.config;
+package br.com.jards.filepulse.watcher.config;
 
 import java.io.IOException;
 import java.nio.file.Files;

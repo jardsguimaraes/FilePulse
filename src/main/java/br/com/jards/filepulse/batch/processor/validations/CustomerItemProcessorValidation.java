@@ -5,8 +5,8 @@ import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 
+import br.com.jards.filepulse.batch.exception.InvalidRecordException;
 import br.com.jards.filepulse.batch.model.CustomerCsvRecord;
-import br.com.jards.filepulse.exception.InvalidRecordException;
 
 public class CustomerItemProcessorValidation {
 

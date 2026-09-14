@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
-import br.com.jards.filepulse.config.FileStorageProperties;
+import br.com.jards.filepulse.watcher.config.FileStorageProperties;
 
 @SpringBootApplication
 @EnableConfigurationProperties(FileStorageProperties.class)

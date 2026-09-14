@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import br.com.jards.filepulse.batch.listener.FileProcessingJobListener;
+
 @Configuration
 public class FileProcessingJobConfig {
 
@@ -18,8 +20,10 @@ public class FileProcessingJobConfig {
     }
 
     @Bean
-    public Job fileProcessingJob(@Qualifier("customerProcessingStep") Step customerProcessingStep) {
+    public Job fileProcessingJob(@Qualifier("customerProcessingStep") Step customerProcessingStep,
+            FileProcessingJobListener fileProcessingJobListener) {
         return new JobBuilder("fileProcessingJob", jobRepository)
+                .listener(fileProcessingJobListener)
                 .start(customerProcessingStep)
                 .build();
     }

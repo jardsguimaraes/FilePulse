@@ -1,4 +1,4 @@
-package br.com.jards.filepulse.service;
+package br.com.jards.filepulse.batch.service;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -6,8 +6,8 @@ import java.nio.file.Path;
 
 import org.springframework.stereotype.Service;
 
-import br.com.jards.filepulse.config.FileStorageProperties;
-import br.com.jards.filepulse.exception.FileMovementException;
+import br.com.jards.filepulse.batch.exception.FileMovementException;
+import br.com.jards.filepulse.watcher.config.FileStorageProperties;
 import lombok.extern.log4j.Log4j2;
 
 @Service

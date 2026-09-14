@@ -9,7 +9,7 @@ import java.nio.file.WatchService;
 
 import org.springframework.stereotype.Component;
 
-import br.com.jards.filepulse.config.FileStorageProperties;
+import br.com.jards.filepulse.watcher.config.FileStorageProperties;
 import jakarta.annotation.PostConstruct;
 
 @Component

@@ -10,11 +10,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import br.com.jards.filepulse.batch.exception.InvalidRecordException;
 import br.com.jards.filepulse.batch.listener.RecordSkipListener;
 import br.com.jards.filepulse.batch.model.Customer;
 import br.com.jards.filepulse.batch.model.CustomerCsvRecord;
 import br.com.jards.filepulse.batch.processor.CustomerItemProcessor;
-import br.com.jards.filepulse.exception.InvalidRecordException;
 import lombok.extern.log4j.Log4j2;
 
 @Configuration

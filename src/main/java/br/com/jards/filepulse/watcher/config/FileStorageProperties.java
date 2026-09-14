@@ -1,4 +1,4 @@
-package br.com.jards.filepulse.config;
+package br.com.jards.filepulse.watcher.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

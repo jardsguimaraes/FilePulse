@@ -1,4 +1,4 @@
-package br.com.jards.filepulse.exception;
+package br.com.jards.filepulse.batch.exception;
 
 public class JobLaunchException extends RuntimeException {
 

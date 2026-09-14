@@ -4,9 +4,9 @@ import java.nio.file.Path;
 
 import org.springframework.stereotype.Component;
 
-import br.com.jards.filepulse.service.FileMovementService;
-import br.com.jards.filepulse.service.FileValidationService;
-import br.com.jards.filepulse.service.JobService;
+import br.com.jards.filepulse.batch.service.FileMovementService;
+import br.com.jards.filepulse.batch.service.FileValidationService;
+import br.com.jards.filepulse.batch.service.JobService;
 import lombok.extern.log4j.Log4j2;
 
 @Component

@@ -1,4 +1,4 @@
-package br.com.jards.filepulse.exception;
+package br.com.jards.filepulse.batch.exception;
 
 public class FileMovementException extends RuntimeException {
 
@@ -6,3 +6,4 @@ public class FileMovementException extends RuntimeException {
         super(message, couse);
     }
 }
+ 
