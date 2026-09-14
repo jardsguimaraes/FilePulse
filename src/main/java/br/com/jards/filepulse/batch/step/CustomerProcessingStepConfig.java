@@ -3,6 +3,7 @@ package br.com.jards.filepulse.batch.step;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.item.database.JdbcBatchItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -31,7 +32,8 @@ public class CustomerProcessingStepConfig {
     @Bean
     public Step customerProcessingStep(
             @Qualifier("customerItemReader") FlatFileItemReader<CustomerCsvRecord> customerItemReader,
-            CustomerItemProcessor customerItemProcessor, RecordSkipListener recordSkipListener) {
+            CustomerItemProcessor customerItemProcessor, RecordSkipListener recordSkipListener,
+            JdbcBatchItemWriter<Customer> customerItemWriter) {
         return new StepBuilder("customerProcessingStep", jobRepository)
                 .<CustomerCsvRecord, Customer>chunk(10, transactionManager)
                 .reader(customerItemReader)
@@ -40,10 +42,7 @@ public class CustomerProcessingStepConfig {
                 .skip(InvalidRecordException.class)
                 .skipLimit(20)
                 .listener(recordSkipListener)
-                .writer(chuck -> {
-                    chuck.getItems()
-                            .forEach(item -> log.info("Registro processado: {}", item));
-                })
+                .writer(customerItemWriter)
                 .build();
     }
 }
