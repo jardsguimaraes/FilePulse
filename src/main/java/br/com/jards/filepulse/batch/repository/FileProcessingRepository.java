@@ -67,7 +67,7 @@ public class FileProcessingRepository {
 
         Boolean exists = jdbcTemplate.queryForObject(sql, Boolean.class, fileHash);
 
-        return exists.TRUE.equals(exists);
+        return Boolean.TRUE.equals(exists);
     }
 
 }

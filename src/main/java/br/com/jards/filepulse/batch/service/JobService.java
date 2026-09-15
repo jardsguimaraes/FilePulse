@@ -23,23 +23,15 @@ public class JobService {
     private final JobLauncher jobLauncher;
     private final Job fileProcessJob;
     private final FileProcessingRepository fileProcessingRepository;
-    private final FileHashService fileHashService;
 
     public JobService(JobLauncher jobLauncher, @Qualifier("fileProcessingJob") Job fileProcessJob,
-            FileProcessingRepository fileProcessingRepository, FileHashService fileHashService) {
+            FileProcessingRepository fileProcessingRepository) {
         this.jobLauncher = jobLauncher;
         this.fileProcessJob = fileProcessJob;
         this.fileProcessingRepository = fileProcessingRepository;
-        this.fileHashService = fileHashService;
     }
 
-    public void start(Path file) {
-        var fileHash = fileHashService.calculate(file);
-
-        if (fileProcessingRepository.existByHash(fileHash)) {
-            log.warn("Arquivo duplicado não será processado. Arquivo: {}, hash: {}", file, fileHash);
-            return;
-        }
+    public void start(Path file, String fileHash) {
 
         Long fileProcessingId = fileProcessingRepository.create(
                 file.getFileName().toString(),
@@ -61,6 +53,5 @@ public class JobService {
             log.error("Erro ao iniciar o Job para o arquivo {}", file, e);
             throw new JobLaunchException("Não foi possível iniciar o Job para o arquivo %s".formatted(file), e);
         }
-
     }
 }

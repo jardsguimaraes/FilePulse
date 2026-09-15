@@ -4,6 +4,7 @@ import java.nio.file.Path;
 
 import org.springframework.stereotype.Component;
 
+import br.com.jards.filepulse.batch.service.FileIdempotencyService;
 import br.com.jards.filepulse.batch.service.FileMovementService;
 import br.com.jards.filepulse.batch.service.FileValidationService;
 import br.com.jards.filepulse.batch.service.JobService;
@@ -16,12 +17,14 @@ public class FileEventHandler {
     private final JobService jobService;
     private final FileValidationService fileValidationService;
     private final FileMovementService fileMovementService;
+    private final FileIdempotencyService fileIdempotencyService;
 
     public FileEventHandler(FileValidationService fileValidationService, FileMovementService fileMovementService,
-            JobService jobService) {
+            JobService jobService, FileIdempotencyService fileIdempotencyService) {
         this.fileValidationService = fileValidationService;
         this.fileMovementService = fileMovementService;
         this.jobService = jobService;
+        this.fileIdempotencyService = fileIdempotencyService;
     }
 
     public void onFileCreated(Path file) {
@@ -44,10 +47,12 @@ public class FileEventHandler {
             return;
         }
 
-        log.info("Arquivo pronto para processamento {}", file);
+        fileIdempotencyService.getHashIfNotProcessed(file)
+                .ifPresent(fileHash -> {
+                    log.info("Arquivo pronto para processamento {}", file);
 
-        var movedFile = fileMovementService.moveToProcessing(file);
-        jobService.start(movedFile);
-
+                    var movedFile = fileMovementService.moveToProcessing(file);
+                    jobService.start(movedFile, fileHash);
+                });
     }
 }
