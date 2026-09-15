@@ -39,4 +39,16 @@ public class FileMovementService {
                     e);
         }
     }
+
+    public Path moveToProcessed(Path file) {
+        try {
+            var destination = Path.of(properties.getProcessedDirectory(), file.getFileName().toString());
+            var movedFile = Files.move(file, destination);
+
+            log.info("Arquivo movido para processados: {}", movedFile);
+            return movedFile;
+        } catch (Exception e) {
+            throw new FileMovementException("Não foi possível mover o arquivo para processados: %s".formatted(file), e);
+        }
+    }
 }
