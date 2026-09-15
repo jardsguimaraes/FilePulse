@@ -23,19 +23,28 @@ public class JobService {
     private final JobLauncher jobLauncher;
     private final Job fileProcessJob;
     private final FileProcessingRepository fileProcessingRepository;
+    private final FileHashService fileHashService;
 
     public JobService(JobLauncher jobLauncher, @Qualifier("fileProcessingJob") Job fileProcessJob,
-            FileProcessingRepository fileProcessingRepository) {
+            FileProcessingRepository fileProcessingRepository, FileHashService fileHashService) {
         this.jobLauncher = jobLauncher;
         this.fileProcessJob = fileProcessJob;
         this.fileProcessingRepository = fileProcessingRepository;
+        this.fileHashService = fileHashService;
     }
 
     public void start(Path file) {
+        var fileHash = fileHashService.calculate(file);
+
+        if (fileProcessingRepository.existByHash(fileHash)) {
+            log.warn("Arquivo duplicado não será processado. Arquivo: {}, hash: {}", file, fileHash);
+            return;
+        }
+
         Long fileProcessingId = fileProcessingRepository.create(
                 file.getFileName().toString(),
                 file.toString(),
-                null);
+                fileHash);
 
         var parameters = new JobParametersBuilder()
                 .addString("filePath", file.toString())

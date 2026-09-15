@@ -55,4 +55,19 @@ public class FileProcessingRepository {
 
         jdbcTemplate.update(sql, status.name(), readCount, writeCount, skipCount, errorMessage, id);
     }
+
+    public boolean existByHash(String fileHash) {
+        String sql = """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM file_processing
+                        WHERE file_hash = ?
+                    )
+                """;
+
+        Boolean exists = jdbcTemplate.queryForObject(sql, Boolean.class, fileHash);
+
+        return exists.TRUE.equals(exists);
+    }
+
 }
