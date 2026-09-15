@@ -10,6 +10,7 @@ import org.springframework.batch.core.repository.JobExecutionAlreadyRunningExcep
 import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
 import org.springframework.batch.core.repository.JobRestartException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.batch.exception.JobLaunchException;
@@ -33,10 +34,18 @@ public class JobService {
 
     public void start(Path file, String fileHash) {
 
-        Long fileProcessingId = fileProcessingRepository.create(
-                file.getFileName().toString(),
-                file.toString(),
-                fileHash);
+        Long fileProcessingId;
+
+        try {
+            fileProcessingId = fileProcessingRepository.create(
+                    file.getFileName().toString(),
+                    file.toString(),
+                    fileHash);
+
+        } catch (DuplicateKeyException e) {
+            log.warn("Processamento não iniciado. Já existe um arquivo registrado com o hash: {}", fileHash);
+            return;
+        }
 
         var parameters = new JobParametersBuilder()
                 .addString("filePath", file.toString())
