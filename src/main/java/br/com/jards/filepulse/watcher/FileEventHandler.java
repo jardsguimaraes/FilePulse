@@ -31,7 +31,8 @@ public class FileEventHandler {
         log.info("Arquivo detectado: {}", file);
 
         if (!fileValidationService.isValid(file)) {
-            log.warn("Arquivo ignorado: {}", file);
+            log.warn("Arquivo rejeitado por formato inválido: {}", file);
+            fileMovementService.moveToRejected(file);
             return;
         }
 
@@ -43,7 +44,8 @@ public class FileEventHandler {
         }
 
         if (!fileValidationService.hasValidHeader(file)) {
-            log.warn("Arquivo com cabeçalho inválido {}", file);
+            log.warn("Arquivo rejeitado por cabeçalho inválido {}", file);
+            fileMovementService.moveToRejected(file);
             return;
         }
 
