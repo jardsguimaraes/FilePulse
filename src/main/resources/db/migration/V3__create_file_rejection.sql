@@ -1,0 +1,9 @@
+CREATE TABLE file_rejection (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(1000) NOT NULL,
+    file_hash CHAR(64),
+    reason VARCHAR(50) NOT NULL,
+    details TEXT,
+    rejected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

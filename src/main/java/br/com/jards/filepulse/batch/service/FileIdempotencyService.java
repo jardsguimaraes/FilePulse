@@ -1,11 +1,11 @@
 package br.com.jards.filepulse.batch.service;
 
 import java.nio.file.Path;
-import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.batch.repository.FileProcessingRepository;
+import br.com.jards.filepulse.watcher.model.FileIdempotencyResult;
 import lombok.extern.log4j.Log4j2;
 
 @Service
@@ -20,14 +20,14 @@ public class FileIdempotencyService {
         this.fileProcessingRepository = fileProcessingRepository;
     }
 
-    public Optional<String> getHashIfNotProcessed(Path file) {
+    public FileIdempotencyResult check(Path file) {
         var fileHash = fileHashService.calculate(file);
+        var duplicate = fileProcessingRepository.existByHash(fileHash);
 
-        if (fileProcessingRepository.existByHash(fileHash)) {
+        if (duplicate) {
             log.warn("Arquivo duplicado não será processado. Arquivo: {}, hash: {}", file, fileHash);
-            return Optional.empty();
         }
 
-        return Optional.of(fileHash);
+        return new FileIdempotencyResult(fileHash, duplicate);
     }
 }
