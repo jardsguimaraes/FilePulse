@@ -52,7 +52,11 @@ public class FileEventHandler {
                     log.info("Arquivo pronto para processamento {}", file);
 
                     var movedFile = fileMovementService.moveToProcessing(file);
-                    jobService.start(movedFile, fileHash);
+                    var jobStarted = jobService.start(movedFile, fileHash);
+
+                    if (!jobStarted) {
+                        fileMovementService.moveToRejected(movedFile);
+                    }
                 });
     }
 }

@@ -32,7 +32,7 @@ public class JobService {
         this.fileProcessingRepository = fileProcessingRepository;
     }
 
-    public void start(Path file, String fileHash) {
+    public boolean start(Path file, String fileHash) {
 
         Long fileProcessingId;
 
@@ -44,7 +44,7 @@ public class JobService {
 
         } catch (DuplicateKeyException e) {
             log.warn("Processamento não iniciado. Já existe um arquivo registrado com o hash: {}", fileHash);
-            return;
+            return false;
         }
 
         var parameters = new JobParametersBuilder()
@@ -55,6 +55,7 @@ public class JobService {
 
         try {
             jobLauncher.run(fileProcessJob, parameters);
+            return true;
         } catch (JobExecutionAlreadyRunningException
                 | JobRestartException
                 | JobInstanceAlreadyCompleteException

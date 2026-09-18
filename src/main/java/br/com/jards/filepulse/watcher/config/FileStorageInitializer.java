@@ -23,5 +23,6 @@ public class FileStorageInitializer {
         Files.createDirectories(Path.of(properties.getProcessingDirectory()));
         Files.createDirectories(Path.of(properties.getProcessedDirectory()));
         Files.createDirectories(Path.of(properties.getErrorDirectory()));
+        Files.createDirectories(Path.of(properties.getRejectedDirectory()));
     }
 }

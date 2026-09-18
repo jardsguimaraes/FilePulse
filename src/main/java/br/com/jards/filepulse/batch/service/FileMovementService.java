@@ -51,4 +51,30 @@ public class FileMovementService {
             throw new FileMovementException("Não foi possível mover o arquivo para processados: %s".formatted(file), e);
         }
     }
+
+    public Path moveToError(Path file) {
+        try {
+            var destination = Path.of(properties.getErrorDirectory(), file.getFileName().toString());
+            var movedFile = Files.move(file, destination);
+
+            log.info("Arquivo movido para erro: {}", movedFile);
+
+            return movedFile;
+        } catch (Exception e) {
+            throw new FileMovementException("Não foi possível mover o arquivo para erro: %s".formatted(file), e);
+        }
+    }
+
+    public Path moveToRejected(Path file) {
+        try {
+            var destination = Path.of(properties.getRejectedDirectory(), file.getFileName().toString());
+            var movedFile = Files.move(file, destination);
+
+            log.info("Arquivo movido para rejeitados: {}", movedFile);
+
+            return movedFile;
+        } catch (Exception e) {
+            throw new FileMovementException("Não foi possível mover o arquivo para rejeitados: %s".formatted(file), e);
+        }
+    }
 }

@@ -14,4 +14,5 @@ public class FileStorageProperties {
     private String processingDirectory;
     private String processedDirectory;
     private String errorDirectory;
+    private String rejectedDirectory;
 }

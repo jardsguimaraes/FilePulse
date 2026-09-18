@@ -30,3 +30,4 @@ fileprocessor:
         processing-directory: ./files/processamento
         processed-directory: ./files/processados
         error-directory: ./files/erro
+        rejected-directory: ./files/rejeitados

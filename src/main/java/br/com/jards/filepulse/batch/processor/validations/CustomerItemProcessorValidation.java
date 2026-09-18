@@ -56,13 +56,13 @@ public class CustomerItemProcessorValidation {
     }
 
     public String processCpf(String cpf) {
-        var norrmalizedCpf = cpf.replaceAll("\\D", "");
+        var normalizedCpf = cpf.replaceAll("\\D", "");
 
-        if ((norrmalizedCpf.length() != 11)  || (!isValidCpf(norrmalizedCpf))){
+        if ((normalizedCpf.length() != 11)  || (!isValidCpf(normalizedCpf))){
             throw new InvalidRecordException("CPF inválido: %s".formatted(cpf));
         }
 
-        return norrmalizedCpf;
+        return normalizedCpf;
     }
 
     private boolean isValidCpf(String cpf) {
@@ -70,10 +70,12 @@ public class CustomerItemProcessorValidation {
             return false;
         }
 
-        int firstDigit = calculateCpfDigit(cpf.substring(0, 9), 10);
-        int secondDigit = calculateCpfDigit(cpf.substring(0, 9), 11);
+        String baseCpf = cpf.substring(0, 9);
 
-        return cpf.equals(cpf.substring(0, 9) + firstDigit + secondDigit);
+        int firstDigit = calculateCpfDigit(baseCpf, 10);
+        int secondDigit = calculateCpfDigit(baseCpf + firstDigit, 11);
+
+        return cpf.equals(baseCpf + firstDigit + secondDigit);
     }
 
     private int calculateCpfDigit(String cpf, int posicao) {

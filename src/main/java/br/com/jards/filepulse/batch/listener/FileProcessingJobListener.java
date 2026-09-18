@@ -58,9 +58,12 @@ public class FileProcessingJobListener implements JobExecutionListener {
                 fileProcessingRepository.finish(fileProcessingId, status, readCount, writeCount, skipCount,
                                 errorMessage);
 
+                var filePath = jobExecution.getJobParameters().getString("filePath");
+
                 if (status == FileProcessingStatus.COMPLETED) {
-                        var filePath = jobExecution.getJobParameters().getString("filePath");
                         fileMovementService.moveToProcessed(Path.of(filePath));
+                } else if (status == FileProcessingStatus.FAILED) {
+                        fileMovementService.moveToError(Path.of(filePath));
                 }
         }
 }
