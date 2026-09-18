@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import br.com.jards.filepulse.batch.service.FileIdempotencyService;
 import br.com.jards.filepulse.batch.service.FileMovementService;
+import br.com.jards.filepulse.batch.service.FileStabilityService;
 import br.com.jards.filepulse.batch.service.FileValidationService;
 import br.com.jards.filepulse.batch.service.JobService;
 import lombok.extern.log4j.Log4j2;
@@ -18,13 +19,15 @@ public class FileEventHandler {
     private final FileValidationService fileValidationService;
     private final FileMovementService fileMovementService;
     private final FileIdempotencyService fileIdempotencyService;
+    private final FileStabilityService fileStabilityService;
 
     public FileEventHandler(FileValidationService fileValidationService, FileMovementService fileMovementService,
-            JobService jobService, FileIdempotencyService fileIdempotencyService) {
+            JobService jobService, FileIdempotencyService fileIdempotencyService, FileStabilityService fileStabilityService) {
         this.fileValidationService = fileValidationService;
         this.fileMovementService = fileMovementService;
         this.jobService = jobService;
         this.fileIdempotencyService = fileIdempotencyService;
+        this.fileStabilityService = fileStabilityService;
     }
 
     public void onFileCreated(Path file) {
@@ -38,8 +41,9 @@ public class FileEventHandler {
 
         log.info("Arquivo csv válido: {}", file);
 
-        if (!fileValidationService.isFileStable(file)) {
-            log.warn("Arquivo ainda não está estável: {}", file);
+        if (!fileStabilityService.waitUntilStable(file)) {
+            log.warn("Arquivo não estabilizou após o limite de tentativas: {}", file);
+            fileMovementService.moveToRejected(file);
             return;
         }
 

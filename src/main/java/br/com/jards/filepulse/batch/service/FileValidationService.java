@@ -6,10 +6,17 @@ import java.nio.file.Path;
 
 import org.springframework.stereotype.Service;
 
+import br.com.jards.filepulse.watcher.config.FileStabilityProperties;
+
 @Service
 public class FileValidationService {
 
+    private final FileStabilityProperties properties;
     private static final String EXPECTED_HEADER = "Nome|CPF|Agência|Conta|Valor|Mês de Referência";
+
+    public FileValidationService(FileStabilityProperties properties) {
+        this.properties = properties;
+    }
 
     public boolean isValid(Path file) {
         if (!Files.isRegularFile(file)) {
@@ -26,19 +33,23 @@ public class FileValidationService {
         try {
             long previousSize = -1;
             int stableChecks = 0;
+            int attempts = 0;
 
-            while (stableChecks < 3) {
+            while (stableChecks < properties.getStableChecks() && attempts < properties.getMaxAttempts()) {
                 long currentSize = Files.size(file);
 
                 if (currentSize == previousSize) {
                     stableChecks++;
+                } else {
+                    stableChecks = 0;
                 }
 
                 previousSize = currentSize;
-                Thread.sleep(1000);
+                attempts++;
+                Thread.sleep(properties.getCheckIntervalMs());
             }
 
-            return true;
+            return stableChecks >= properties.getStableChecks();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;

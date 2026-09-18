@@ -31,3 +31,9 @@ fileprocessor:
         processed-directory: ./files/processados
         error-directory: ./files/erro
         rejected-directory: ./files/rejeitados
+    stability:
+        stable-checks: 3
+        max-attempts: 10
+        check-interval-ms: 1000
+        max-retries: 3
+        retry-interval-ms: 5000
