@@ -37,3 +37,5 @@ fileprocessor:
         check-interval-ms: 1000
         max-retries: 3
         retry-interval-ms: 5000
+    recovery:
+        abandoned-after-minutes: 30

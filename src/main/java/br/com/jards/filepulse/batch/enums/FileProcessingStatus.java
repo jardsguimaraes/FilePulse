@@ -4,5 +4,6 @@ public enum FileProcessingStatus {
     PROCESSING,
     COMPLETED,
     FAILED,
-    REJECTED
+    REJECTED,
+    ABANDONED
 }
