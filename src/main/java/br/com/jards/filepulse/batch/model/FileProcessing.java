@@ -8,6 +8,7 @@ public record FileProcessing(
         Long id,
         String fileName,
         String filePath,
+        String finalFilePath,
         String fileHash,
         FileProcessingStatus status,
         Long readCount,

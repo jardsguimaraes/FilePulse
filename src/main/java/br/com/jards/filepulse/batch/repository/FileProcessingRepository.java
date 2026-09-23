@@ -41,7 +41,7 @@ public class FileProcessingRepository {
     }
 
     public void finish(Long id, FileProcessingStatus status, Long readCount, Long writeCount, Long skipCount,
-            String errorMessage) {
+            String errorMessage, String finalFilePath) {
         String sql = """
                 UPDATE file_processing
                 SET status = ?,
@@ -49,11 +49,12 @@ public class FileProcessingRepository {
                     write_count = ?,
                     skip_count = ?,
                     finished_at = CURRENT_TIMESTAMP,
-                    error_message = ?
+                    error_message = ?,
+                    final_file_path = ?
                 WHERE id = ?
                 """;
 
-        jdbcTemplate.update(sql, status.name(), readCount, writeCount, skipCount, errorMessage, id);
+        jdbcTemplate.update(sql, status.name(), readCount, writeCount, skipCount, errorMessage, finalFilePath, id);
     }
 
     public boolean existByHash(String fileHash) {
