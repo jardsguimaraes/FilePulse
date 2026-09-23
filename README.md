@@ -9,9 +9,6 @@ integridade, controla idempotência por conteúdo, processa registros em
 chunks, persiste dados no PostgreSQL e mantém rastreabilidade do ciclo
 de vida dos arquivos.
 
-> Este README diferencia explicitamente o que **já está implementado**
-> da **arquitetura planejada**.
-
 ------------------------------------------------------------------------
 
 ## 🎯 Objetivo
