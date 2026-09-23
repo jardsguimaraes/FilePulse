@@ -1,8 +1,10 @@
 package br.com.jards.filepulse.batch.service;
 
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
@@ -21,19 +23,11 @@ public class FileMovementService {
     }
 
     public Path moveToProcessing(Path file) {
-        var processingDirectory = Path.of(properties.getProcessingDirectory());
-        var destination = processingDirectory.resolve(file.getFileName());
-
         try {
-            var movedFile = Files.move(file, destination);
+            var movedFile = move(file, Path.of(properties.getProcessingDirectory()));
             log.info("Arquivo movido para processamento: {}", movedFile);
             return movedFile;
         } catch (IOException e) {
-            log.error("Erro ao mover o arquivo {} para {}",
-                    file,
-                    destination,
-                    e);
-
             throw new FileMovementException(
                     "Não foi possível mover o arquivo para processamento: %s".formatted(file),
                     e);
@@ -42,39 +36,74 @@ public class FileMovementService {
 
     public Path moveToProcessed(Path file) {
         try {
-            var destination = Path.of(properties.getProcessedDirectory(), file.getFileName().toString());
-            var movedFile = Files.move(file, destination);
+            var movedFile = move(file, Path.of(properties.getProcessedDirectory()));
 
             log.info("Arquivo movido para processados: {}", movedFile);
             return movedFile;
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new FileMovementException("Não foi possível mover o arquivo para processados: %s".formatted(file), e);
         }
     }
 
     public Path moveToError(Path file) {
         try {
-            var destination = Path.of(properties.getErrorDirectory(), file.getFileName().toString());
-            var movedFile = Files.move(file, destination);
+            var movedFile = move(file, Path.of(properties.getErrorDirectory()));
 
             log.info("Arquivo movido para erro: {}", movedFile);
 
             return movedFile;
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new FileMovementException("Não foi possível mover o arquivo para erro: %s".formatted(file), e);
         }
     }
 
     public Path moveToRejected(Path file) {
         try {
-            var destination = Path.of(properties.getRejectedDirectory(), file.getFileName().toString());
-            var movedFile = Files.move(file, destination);
+            var movedFile = move(file, Path.of(properties.getRejectedDirectory()));
 
             log.info("Arquivo movido para rejeitados: {}", movedFile);
 
             return movedFile;
-        } catch (Exception e) {
+        } catch (IOException e) {
             throw new FileMovementException("Não foi possível mover o arquivo para rejeitados: %s".formatted(file), e);
         }
+    }
+
+    private Path resolveDestination(Path directory, Path file) {
+        var destination = directory.resolve(file.getFileName());
+
+        if (!Files.exists(destination)) {
+            return destination;
+        }
+
+        return createUniqueDestination(directory, file);
+    }
+
+    private Path move(Path file, Path directory) throws IOException {
+        var destination = resolveDestination(directory, file);
+
+        try {
+            return Files.move(file, destination);
+        } catch (FileAlreadyExistsException e) {
+            var uniqueDestination = createUniqueDestination(directory, file);
+            return Files.move(file, uniqueDestination);
+        }
+    }
+
+    private Path createUniqueDestination(Path directory, Path file) {
+        var fileName = file.getFileName().toString();
+        var dotIndex = fileName.lastIndexOf('.');
+
+        var baseName = dotIndex > 0
+                ? fileName.substring(0, dotIndex)
+                : fileName;
+
+        var extension = dotIndex > 0
+                ? fileName.substring(dotIndex)
+                : "";
+
+        var uniqueFileName = "%s_%s%s".formatted(baseName, UUID.randomUUID(), extension);
+
+        return directory.resolve(uniqueFileName);
     }
 }
