@@ -25,14 +25,17 @@ public class FileRejectionService {
     public void reject(Path file, String fileHash, FileRejectionReason reason, String details) {
         var rejectedFile = fileMovementService.moveToRejected(file);
 
+        audit(rejectedFile, fileHash, reason, details);
+    }
+
+    public void audit(Path file, String fileHash, FileRejectionReason reason, String details) {
         fileRejectionRepository.create(
-                rejectedFile.getFileName().toString(),
-                rejectedFile.toString(),
+                file.getFileName().toString(),
+                file.toString(),
                 fileHash,
                 reason,
                 details);
 
-        log.warn("Arquivo rejeitado. Arquivo: {}, motivo: {}, detalhes: {}", rejectedFile, reason, details);
+        log.warn("Ocorrência de arquivo registrada. Arquivo: {}, motivo: {}, detalhes: {}", file, reason, details);
     }
-
 }

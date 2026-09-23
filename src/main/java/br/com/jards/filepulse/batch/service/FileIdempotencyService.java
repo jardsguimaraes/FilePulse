@@ -22,7 +22,7 @@ public class FileIdempotencyService {
 
     public FileIdempotencyResult check(Path file) {
         var fileHash = fileHashService.calculate(file);
-        var duplicate = fileProcessingRepository.existByHash(fileHash);
+        var duplicate = fileProcessingRepository.existsByHash(fileHash);
 
         if (duplicate) {
             log.warn("Arquivo duplicado não será processado. Arquivo: {}, hash: {}", file, fileHash);

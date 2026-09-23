@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -63,7 +64,7 @@ public class FileProcessingRepository {
         jdbcTemplate.update(sql, status.name(), readCount, writeCount, skipCount, errorMessage, finalFilePath, id);
     }
 
-    public boolean existByHash(String fileHash) {
+    public boolean existsByHash(String fileHash) {
         String sql = """
                     SELECT EXISTS (
                         SELECT 1
@@ -138,6 +139,44 @@ public class FileProcessingRepository {
                 id, FileProcessingStatus.PROCESSING.name());
 
         return updatedRows == 1;
+    }
+
+    public boolean updateFinalFilePath(Long id, String finalFilePath, FileProcessingStatus status) {
+        String sql = """
+                    UPDATE file_processing
+                    SET final_file_path = ?
+                    WHERE id = ?
+                        AND status = ?
+                        AND final_file_path IS NULL
+                """;
+
+        var updateRows = jdbcTemplate.update(sql, finalFilePath, id, status.name());
+
+        return updateRows == 1;
+    }
+
+    public Optional<FileProcessing> findByFilePath(String filePath) {
+        String sql = """
+                    SELECT
+                        id,
+                        file_name,
+                        file_path,
+                        final_file_path,
+                        file_hash,
+                        status,
+                        read_count,
+                        write_count,
+                        skip_count,
+                        started_at,
+                        finished_at,
+                        error_message
+                    FROM file_processing
+                    WHERE file_path = ?
+                """;
+
+        return jdbcTemplate.query(sql, this::mapRow, filePath)
+                .stream()
+                .findFirst();
     }
 
 }

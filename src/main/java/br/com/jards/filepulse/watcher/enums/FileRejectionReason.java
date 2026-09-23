@@ -4,5 +4,7 @@ public enum FileRejectionReason {
     INVALID_FORMAT,
     INVALID_HEADER,
     UNSTABLE_FILE,
-    DUPLICATE
+    DUPLICATE,
+    ORPHAN_PROCESSING_FILE,
+    ORPHAN_DUPLICATE
 }
