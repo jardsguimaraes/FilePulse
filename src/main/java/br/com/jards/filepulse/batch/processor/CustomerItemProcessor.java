@@ -1,6 +1,8 @@
 package br.com.jards.filepulse.batch.processor;
 
+import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
@@ -10,7 +12,14 @@ import br.com.jards.filepulse.batch.model.CustomerCsvRecord;
 import br.com.jards.filepulse.batch.processor.validations.CustomerItemProcessorValidation;
 
 @Component
+@StepScope
 public class CustomerItemProcessor implements ItemProcessor<CustomerCsvRecord, Customer> {
+
+    private final Long fileProcessingId;
+
+    public CustomerItemProcessor(@Value("#{jobParameters['fileProcessingId']}") Long fileProcessingId) {
+        this.fileProcessingId = fileProcessingId;
+    }
 
     @Override
     @Nullable
@@ -21,6 +30,7 @@ public class CustomerItemProcessor implements ItemProcessor<CustomerCsvRecord, C
         validation.validateReferenceMonth(item.referenceMonth());
 
         return new Customer(
+                fileProcessingId,
                 item.name(),
                 validation.processCpf(item.cpf()),
                 item.agency(),

@@ -18,8 +18,8 @@ public class CustomerWriterConfig {
         .dataSource(dataSource)
         .sql(
             """
-                INSERT INTO customer (name, cpf, agency, account, value, reference_month)
-                    VALUES (:name, :cpf, :agency, :account, :value, :referenceMonth)
+                INSERT INTO customer (file_processing_id, name, cpf, agency, account, value, reference_month)
+                    VALUES (:fileProcessingId, :name, :cpf, :agency, :account, :value, :referenceMonth)
             """)
         .beanMapped()
         .build();
