@@ -3,6 +3,7 @@ package br.com.jards.filepulse.integration;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,8 @@ import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
+import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
 import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
@@ -25,6 +28,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -60,15 +64,15 @@ class ChunkTransactionIntegrationTest {
                 .addLong("timestamp", System.currentTimeMillis())
                 .toJobParameters();
 
-        JobExecution execution = jobLauncher.run(chunkTransactionTestJob, jobParameters);
+        JobExecution firstExecution = jobLauncher.run(chunkTransactionTestJob, jobParameters);
 
-        assertEquals(BatchStatus.FAILED, execution.getStatus());
+        assertEquals(BatchStatus.FAILED, firstExecution.getStatus());
 
-        Integer count = jdbcTemplate.queryForObject(
+        Integer countAfterFailure = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM chunk_test",
                 Integer.class);
 
-        assertEquals(30, count);
+        assertEquals(30, countAfterFailure);
 
         List<Integer> persistedIds = jdbcTemplate.queryForList(
                 "SELECT id FROM chunk_test ORDER BY id",
@@ -79,6 +83,16 @@ class ChunkTransactionIntegrationTest {
                 .toList();
 
         assertEquals(expectedIds, persistedIds);
+
+        JobExecution secondExecution = jobLauncher.run(chunkTransactionTestJob, jobParameters);
+
+        assertEquals(BatchStatus.COMPLETED, secondExecution.getStatus());
+
+        Integer finalCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM chunk_test",
+                Integer.class);
+
+        assertEquals(40, finalCount);
     }
 
     @TestConfiguration
@@ -98,17 +112,19 @@ class ChunkTransactionIntegrationTest {
         }
 
         @Bean
-        ListItemReader<Integer> chunkTestReader() {
-            return new ListItemReader<>(
-                    IntStream.rangeClosed(1, 40)
-                            .boxed()
-                            .toList());
+        FlatFileItemReader<Integer> chunkTestReader() {
+            return new FlatFileItemReaderBuilder()
+                    .name("chunkTestReader")
+                    .resource(
+                            new ClassPathResource("chunk-test.csv"))
+                    .lineMapper((line, lineNumber) -> Integer.valueOf(line))
+                    .build();
         }
 
         @Bean
-        ItemProcessor<Integer, Integer> chunkTestProcessor() {
+        ItemProcessor<Integer, Integer> chunkTestProcessor(AtomicBoolean shouldFail) {
             return item -> {
-                if (item == 31) {
+                if (item == 31 && shouldFail.compareAndSet(true, false)) {
                     throw new RuntimeException(
                             "Falha controlada no registro 31");
                 }
@@ -132,7 +148,7 @@ class ChunkTransactionIntegrationTest {
         @Bean
         Step chunkTransactionTestStep(
                 PlatformTransactionManager transactionManager,
-                ListItemReader<Integer> chunkTestReader,
+                FlatFileItemReader<Integer> chunkTestReader,
                 ItemProcessor<Integer, Integer> chunkTestProcessor,
                 ItemWriter<Integer> chunkTestWriter) {
 
@@ -151,6 +167,11 @@ class ChunkTransactionIntegrationTest {
             return new JobBuilder("chunkTransactionTestJob", jobRepository)
                     .start(chunkTransactionTestStep)
                     .build();
+        }
+
+        @Bean
+        AtomicBoolean shouldFail() {
+            return new AtomicBoolean(true);
         }
     }
 }
