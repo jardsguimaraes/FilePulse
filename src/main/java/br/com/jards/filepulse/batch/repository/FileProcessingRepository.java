@@ -179,4 +179,51 @@ public class FileProcessingRepository {
                 .findFirst();
     }
 
+    public Optional<FileProcessing> findById(Long id) {
+        String sql = """
+                SELECT
+                    id,
+                    file_name,
+                    file_path,
+                    final_file_path,
+                    file_hash,
+                    status,
+                    read_count,
+                    write_count,
+                    skip_count,
+                    started_at,
+                    finished_at,
+                    error_message
+                FROM file_processing
+                WHERE id = ?
+                """;
+
+        return jdbcTemplate.query(sql, this::mapRow, id)
+                .stream()
+                .findFirst();
+    }
+
+    public boolean markAsProcessing(Long id, String filePath) {
+        String sql = """
+                UPDATE file_processing
+                SET status = ?,
+                    file_path = ?,
+                    finished_at = NULL,
+                    error_message = NULL,
+                    final_file_path = NULL
+                WHERE id = ?
+                    AND status IN (?, ?)
+                """;
+
+        var updatedRows = jdbcTemplate.update(
+                sql,
+                FileProcessingStatus.PROCESSING.name(),
+                filePath,
+                id,
+                FileProcessingStatus.PROCESSING.name(),
+                FileProcessingStatus.FAILED.name());
+
+        return updatedRows == 1;
+    }
+
 }

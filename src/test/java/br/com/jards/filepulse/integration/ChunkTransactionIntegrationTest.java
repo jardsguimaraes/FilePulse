@@ -21,7 +21,6 @@ import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
-import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -86,6 +85,7 @@ class ChunkTransactionIntegrationTest {
 
         JobExecution secondExecution = jobLauncher.run(chunkTransactionTestJob, jobParameters);
 
+        assertEquals(firstExecution.getJobInstance().getInstanceId(), secondExecution.getJobInstance().getInstanceId());
         assertEquals(BatchStatus.COMPLETED, secondExecution.getStatus());
 
         Integer finalCount = jdbcTemplate.queryForObject(
@@ -93,6 +93,13 @@ class ChunkTransactionIntegrationTest {
                 Integer.class);
 
         assertEquals(40, finalCount);
+
+        List<Integer> finalIds = jdbcTemplate.queryForList("SELECT id FROM chunk_test ORDER BY id", Integer.class);
+        List<Integer> expectedFinalIds = IntStream.rangeClosed(1, 40)
+                .boxed()
+                .toList();
+
+        assertEquals(expectedFinalIds, finalIds);
     }
 
     @TestConfiguration

@@ -24,6 +24,22 @@ public class FileProcessingJobListener implements JobExecutionListener {
         }
 
         @Override
+        public void beforeJob(JobExecution jobExecution) {
+                var fileProcessingId = jobExecution.getJobParameters()
+                                .getLong("fileProcessingId");
+
+                var filePath = jobExecution.getJobParameters()
+                                .getString("filePath");
+
+                var updated = fileProcessingRepository.markAsProcessing(fileProcessingId, filePath);
+
+                if (!updated) {
+                        throw new IllegalStateException("Não foi possível iniciar o processamento %d"
+                                        .formatted(fileProcessingId));
+                }
+        }
+
+        @Override
         public void afterJob(JobExecution jobExecution) {
                 var fileProcessingId = jobExecution.getJobParameters()
                                 .getLong("fileProcessingId");
@@ -66,7 +82,6 @@ public class FileProcessingJobListener implements JobExecutionListener {
 
                 fileProcessingRepository.finish(fileProcessingId, status, readCount, writeCount, skipCount,
                                 errorMessage, finalFile.toString());
-
 
         }
 }
