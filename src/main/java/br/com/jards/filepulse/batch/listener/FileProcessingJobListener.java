@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionListener;
+import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.stereotype.Component;
 
 import br.com.jards.filepulse.batch.enums.FileProcessingStatus;
@@ -16,11 +17,13 @@ public class FileProcessingJobListener implements JobExecutionListener {
 
         private final FileProcessingRepository fileProcessingRepository;
         private final FileMovementService fileMovementService;
+        private final JobExplorer jobExplorer;
 
         public FileProcessingJobListener(FileProcessingRepository fileProcessingRepository,
-                        FileMovementService fileMovementService) {
+                        FileMovementService fileMovementService, JobExplorer jobExplorer) {
                 this.fileProcessingRepository = fileProcessingRepository;
                 this.fileMovementService = fileMovementService;
+                this.jobExplorer = jobExplorer;
         }
 
         @Override
@@ -44,16 +47,22 @@ public class FileProcessingJobListener implements JobExecutionListener {
                 var fileProcessingId = jobExecution.getJobParameters()
                                 .getLong("fileProcessingId");
 
-                var readCount = jobExecution.getStepExecutions().stream()
+                var executions = jobExplorer.getJobExecutions(jobExecution.getJobInstance());
+
+                var steps = executions.stream()
+                                .flatMap(execution -> execution.getStepExecutions().stream())
+                                .toList();
+
+                var readCount = steps.stream()
                                 .mapToLong(step -> step.getReadCount())
                                 .sum();
 
-                var writeCount = jobExecution.getStepExecutions().stream()
+                var writeCount = steps.stream()
                                 .mapToLong(step -> step.getWriteCount())
                                 .sum();
 
-                var skipCount = jobExecution.getStepExecutions().stream()
-                                .mapToLong(step -> step.getReadSkipCount()
+                var skipCount = steps.stream()
+                                .mapToLong(step -> step.getSkipCount()
                                                 + step.getProcessSkipCount()
                                                 + step.getWriteSkipCount())
                                 .sum();
