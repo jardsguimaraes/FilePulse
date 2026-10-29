@@ -6,6 +6,7 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -224,6 +225,42 @@ public class FileProcessingRepository {
                 FileProcessingStatus.FAILED.name());
 
         return updatedRows == 1;
+    }
+
+    public List<FileProcessing> findAll(int page, int size) {
+        String sql = """
+                SELECT
+                    id,
+                    file_name,
+                    file_path,
+                    final_file_path,
+                    file_hash,
+                    status,
+                    read_count,
+                    write_count,
+                    skip_count,
+                    started_at,
+                    finished_at,
+                    error_message
+                FROM file_processing
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                    """;
+
+        int offset = Math.multiplyExact(page, size);
+
+        return jdbcTemplate.query(sql, this::mapRow, size, offset);
+    }
+
+    public long countAll() {
+        String sql = """
+                SELECT COUNT(*)
+                FROM file_processing
+                    """;
+
+        Long total = jdbcTemplate.queryForObject(sql, Long.class);
+
+        return Objects.requireNonNull(total, "A consulta de contagem não retornou um valor");
     }
 
 }
