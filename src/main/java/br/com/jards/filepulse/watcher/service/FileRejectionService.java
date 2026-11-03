@@ -4,7 +4,7 @@ import java.nio.file.Path;
 
 import org.springframework.stereotype.Service;
 
-import br.com.jards.filepulse.batch.service.FileMovementService;
+import br.com.jards.filepulse.batch.service.MovimentacaoArquivoService;
 import br.com.jards.filepulse.watcher.enums.FileRejectionReason;
 import br.com.jards.filepulse.watcher.repositeries.FileRejectionRepository;
 import lombok.extern.log4j.Log4j2;
@@ -14,10 +14,10 @@ import lombok.extern.log4j.Log4j2;
 public class FileRejectionService {
 
     private final FileRejectionRepository fileRejectionRepository;
-    private final FileMovementService fileMovementService;
+    private final MovimentacaoArquivoService fileMovementService;
 
     public FileRejectionService(FileRejectionRepository fileRejectionRepository,
-            FileMovementService fileMovementService) {
+            MovimentacaoArquivoService fileMovementService) {
         this.fileRejectionRepository = fileRejectionRepository;
         this.fileMovementService = fileMovementService;
     }

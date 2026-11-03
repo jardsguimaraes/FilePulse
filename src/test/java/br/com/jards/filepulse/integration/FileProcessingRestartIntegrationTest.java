@@ -94,7 +94,7 @@ public class FileProcessingRestartIntegrationTest {
 
         Long fileProcessigId = ((Number) processing.get("id")).longValue();
 
-        assertEquals("FAILED", processing.get("status"));
+        assertEquals("FALHOU", processing.get("status"));
 
         var customers = jdbcTemplate.queryForObject(
                 """
@@ -141,7 +141,7 @@ public class FileProcessingRestartIntegrationTest {
 
         System.out.println("FILE_PROCESSING AFTER RESTART = %s".formatted(pricessingAfterRestart));
 
-        assertEquals("COMPLETED", pricessingAfterRestart.get("status"));
+        assertEquals("COMPLETO", pricessingAfterRestart.get("status"));
         assertNull(pricessingAfterRestart.get("error_message"));
         assertFalse(Files.exists(errorDirectory.resolve("clientes-restart.csv")));
         assertTrue(Files.exists(processedDirectory.resolve("clientes-restart.csv")));

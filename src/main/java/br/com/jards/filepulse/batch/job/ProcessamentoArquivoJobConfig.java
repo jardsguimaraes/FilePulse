@@ -8,23 +8,23 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import br.com.jards.filepulse.batch.listener.FileProcessingJobListener;
+import br.com.jards.filepulse.batch.listener.ProcessamentoArquivoJobListener;
 
 @Configuration
-public class FileProcessingJobConfig {
+public class ProcessamentoArquivoJobConfig {
 
     private final JobRepository jobRepository;
 
-    public FileProcessingJobConfig(JobRepository jobRepository) {
+    public ProcessamentoArquivoJobConfig(JobRepository jobRepository) {
         this.jobRepository = jobRepository;
     }
 
     @Bean
-    public Job fileProcessingJob(@Qualifier("customerProcessingStep") Step customerProcessingStep,
-            FileProcessingJobListener fileProcessingJobListener) {
+    public Job processarArquivoJob(@Qualifier("customerProcessingStep") Step processamentoClienteStep,
+            ProcessamentoArquivoJobListener processamentoArquivoJobListener) {
         return new JobBuilder("fileProcessingJob", jobRepository)
-                .listener(fileProcessingJobListener)
-                .start(customerProcessingStep)
+                .listener(processamentoArquivoJobListener)
+                .start(processamentoClienteStep)
                 .build();
     }
 }

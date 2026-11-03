@@ -7,21 +7,21 @@ import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilde
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import br.com.jards.filepulse.batch.model.Customer;
+import br.com.jards.filepulse.batch.model.Cliente;
 
 @Configuration
 public class CustomerWriterConfig {
 
     @Bean
-    public JdbcBatchItemWriter<Customer> customerItemWriter(DataSource dataSource) {
-        return new JdbcBatchItemWriterBuilder<Customer>()
-        .dataSource(dataSource)
-        .sql(
-            """
-                INSERT INTO customer (file_processing_id, name, cpf, agency, account, value, reference_month)
-                    VALUES (:fileProcessingId, :name, :cpf, :agency, :account, :value, :referenceMonth)
-            """)
-        .beanMapped()
-        .build();
+    public JdbcBatchItemWriter<Cliente> customerItemWriter(DataSource dataSource) {
+        return new JdbcBatchItemWriterBuilder<Cliente>()
+                .dataSource(dataSource)
+                .sql(
+                        """
+                                    INSERT INTO customer (file_processing_id, name, cpf, agency, account, value, reference_month)
+                                        VALUES (:id, :nome, :cpf, :agencia, :conta, :valor, :mesReferencia)
+                                """)
+                .beanMapped()
+                .build();
     }
 }

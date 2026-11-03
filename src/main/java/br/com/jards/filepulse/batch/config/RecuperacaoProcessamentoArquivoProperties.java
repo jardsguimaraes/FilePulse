@@ -8,7 +8,7 @@ import lombok.Setter;
 @Setter
 @Getter
 @ConfigurationProperties(prefix = "fileprocessor.recovery")
-public class FileProcessingRecoveryProperties {
+public class RecuperacaoProcessamentoArquivoProperties {
 
     private Long abandonedAfterMinutes;
 }

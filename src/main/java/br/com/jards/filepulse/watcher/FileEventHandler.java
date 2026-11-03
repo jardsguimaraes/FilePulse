@@ -5,10 +5,10 @@ import java.nio.file.Path;
 import org.springframework.stereotype.Component;
 
 import br.com.jards.filepulse.batch.service.FileIdempotencyService;
-import br.com.jards.filepulse.batch.service.FileMovementService;
 import br.com.jards.filepulse.batch.service.FileStabilityService;
 import br.com.jards.filepulse.batch.service.FileValidationService;
 import br.com.jards.filepulse.batch.service.JobService;
+import br.com.jards.filepulse.batch.service.MovimentacaoArquivoService;
 import br.com.jards.filepulse.watcher.enums.FileRejectionReason;
 import br.com.jards.filepulse.watcher.service.FileRejectionService;
 import lombok.extern.log4j.Log4j2;
@@ -19,12 +19,12 @@ public class FileEventHandler {
 
     private final JobService jobService;
     private final FileValidationService fileValidationService;
-    private final FileMovementService fileMovementService;
+    private final MovimentacaoArquivoService fileMovementService;
     private final FileIdempotencyService fileIdempotencyService;
     private final FileStabilityService fileStabilityService;
     private final FileRejectionService fileRejectionService;
 
-    public FileEventHandler(FileValidationService fileValidationService, FileMovementService fileMovementService,
+    public FileEventHandler(FileValidationService fileValidationService, MovimentacaoArquivoService fileMovementService,
             JobService jobService, FileIdempotencyService fileIdempotencyService,
             FileStabilityService fileStabilityService, FileRejectionService fileRejectionService) {
         this.fileValidationService = fileValidationService;

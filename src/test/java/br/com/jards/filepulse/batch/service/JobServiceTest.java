@@ -19,146 +19,146 @@ import org.springframework.batch.core.JobParameters;
 import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobRestartException;
 
-import br.com.jards.filepulse.batch.enums.FileProcessingStatus;
+import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.exception.JobLaunchException;
-import br.com.jards.filepulse.batch.model.FileProcessing;
-import br.com.jards.filepulse.batch.repository.FileProcessingRepository;
+import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
+import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 
 @ExtendWith(MockitoExtension.class)
 public class JobServiceTest {
 
-    @Mock
-    private JobLauncher jobLauncher;
+        @Mock
+        private JobLauncher jobLauncher;
 
-    @Mock
-    private Job fileProcessJob;
+        @Mock
+        private Job fileProcessJob;
 
-    @Mock
-    private FileProcessingRepository fileProcessingRepository;
+        @Mock
+        private ProcessamentoArquivoRepository fileProcessingRepository;
 
-    @Mock
-    private FileMovementService fileMovementService;
+        @Mock
+        private MovimentacaoArquivoService fileMovementService;
 
-    @InjectMocks
-    private JobService jobService;
+        @InjectMocks
+        private JobService jobService;
 
-    @Test
-    void shouldNotRestartCompletedProcessing() {
+        @Test
+        void shouldNotRestartCompletedProcessing() {
 
-        var processing = new FileProcessing(
-                42L,
-                "clientes.csv",
-                "./files/processamento/clientes.csv",
-                "./files/processados/clientes.csv",
-                "hash-teste",
-                FileProcessingStatus.COMPLETED,
-                40L,
-                40L,
-                0L,
-                LocalDateTime.now(),
-                LocalDateTime.now(),
-                null);
+                var processing = new ProcessamentoArquivo(
+                                42L,
+                                "clientes.csv",
+                                "./files/processamento/clientes.csv",
+                                "./files/processados/clientes.csv",
+                                "hash-teste",
+                                StatusProcessamentoArquivo.COMPLETO,
+                                40L,
+                                40L,
+                                0L,
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                null);
 
-        when(fileProcessingRepository.findById(42L))
-                .thenReturn(Optional.of(processing));
+                when(fileProcessingRepository.buscarPorId(42L))
+                                .thenReturn(Optional.of(processing));
 
-        assertThrows(
-                IllegalStateException.class,
-                () -> jobService.restart(42L));
-    }
+                assertThrows(
+                                IllegalStateException.class,
+                                () -> jobService.restart(42L));
+        }
 
-    @Test
-    void shouldRestartFailedProcessing() throws Exception {
+        @Test
+        void shouldRestartFailedProcessing() throws Exception {
 
-        var processing = new FileProcessing(
-                42L,
-                "clientes.csv",
-                "./files/processamento/clientes.csv",
-                "./files/erro/clientes.csv",
-                "hash-teste",
-                FileProcessingStatus.FAILED,
-                30L,
-                30L,
-                0L,
-                LocalDateTime.now(),
-                LocalDateTime.now(),
-                "Falha controlada");
+                var processing = new ProcessamentoArquivo(
+                                42L,
+                                "clientes.csv",
+                                "./files/processamento/clientes.csv",
+                                "./files/erro/clientes.csv",
+                                "hash-teste",
+                                StatusProcessamentoArquivo.FALHOU,
+                                30L,
+                                30L,
+                                0L,
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                "Falha controlada");
 
-        var errorFile = Path.of("./files/erro/clientes.csv");
-        var processingFile = Path.of("./files/processamento/clientes.csv");
+                var errorFile = Path.of("./files/erro/clientes.csv");
+                var processingFile = Path.of("./files/processamento/clientes.csv");
 
-        when(fileProcessingRepository.findById(42L))
-                .thenReturn(Optional.of(processing));
+                when(fileProcessingRepository.buscarPorId(42L))
+                                .thenReturn(Optional.of(processing));
 
-        when(fileMovementService.moveToProcessing(errorFile))
-                .thenReturn(processingFile);
+                when(fileMovementService.moveToProcessing(errorFile))
+                                .thenReturn(processingFile);
 
-        jobService.restart(42L);
+                jobService.restart(42L);
 
-        verify(fileMovementService)
-                .moveToProcessing(errorFile);
+                verify(fileMovementService)
+                                .moveToProcessing(errorFile);
 
-        var parametersCaptor = ArgumentCaptor.forClass(JobParameters.class);
+                var parametersCaptor = ArgumentCaptor.forClass(JobParameters.class);
 
-        verify(jobLauncher).run(eq(fileProcessJob),
-                parametersCaptor.capture());
+                verify(jobLauncher).run(eq(fileProcessJob),
+                                parametersCaptor.capture());
 
-        var parameters = parametersCaptor.getValue();
+                var parameters = parametersCaptor.getValue();
 
-        assertEquals(42L, parameters.getLong("fileProcessingId"));
-        assertEquals(processingFile.toString(), parameters.getString("filePath"));
+                assertEquals(42L, parameters.getLong("fileProcessingId"));
+                assertEquals(processingFile.toString(), parameters.getString("filePath"));
 
-        var identifyingParameters = parameters.getIdentifyingParameters();
+                var identifyingParameters = parameters.getIdentifyingParameters();
 
-        assertTrue(identifyingParameters.containsKey("fileProcessingId"));
-        assertFalse(identifyingParameters.containsKey("filePath"));
-        assertFalse(identifyingParameters.containsKey("timestamp"));
-    }
+                assertTrue(identifyingParameters.containsKey("fileProcessingId"));
+                assertFalse(identifyingParameters.containsKey("filePath"));
+                assertFalse(identifyingParameters.containsKey("timestamp"));
+        }
 
-    @Test
-    void shouldMoveFileBackToErrorWhenRestartCannotBeStarted() throws Exception {
+        @Test
+        void shouldMoveFileBackToErrorWhenRestartCannotBeStarted() throws Exception {
 
-        var processing = new FileProcessing(
-                42L,
-                "clientes.csv",
-                "./files/processamento/clientes.csv",
-                "./files/erro/clientes.csv",
-                "hash-teste",
-                FileProcessingStatus.FAILED,
-                30L,
-                30L,
-                0L,
-                LocalDateTime.now(),
-                LocalDateTime.now(),
-                "Falha controlada");
+                var processing = new ProcessamentoArquivo(
+                                42L,
+                                "clientes.csv",
+                                "./files/processamento/clientes.csv",
+                                "./files/erro/clientes.csv",
+                                "hash-teste",
+                                StatusProcessamentoArquivo.FALHOU,
+                                30L,
+                                30L,
+                                0L,
+                                LocalDateTime.now(),
+                                LocalDateTime.now(),
+                                "Falha controlada");
 
-        var errorFile = Path.of("./files/erro/clientes.csv");
-        var processingFile = Path.of("./files/processamento/clientes.csv");
-        var returnedErrorFile = Path.of("./files/erro/clientes.csv");
+                var errorFile = Path.of("./files/erro/clientes.csv");
+                var processingFile = Path.of("./files/processamento/clientes.csv");
+                var returnedErrorFile = Path.of("./files/erro/clientes.csv");
 
-        when(fileProcessingRepository.findById(42L))
-                .thenReturn(Optional.of(processing));
+                when(fileProcessingRepository.buscarPorId(42L))
+                                .thenReturn(Optional.of(processing));
 
-        when(fileMovementService.moveToProcessing(errorFile))
-                .thenReturn(processingFile);
+                when(fileMovementService.moveToProcessing(errorFile))
+                                .thenReturn(processingFile);
 
-        when(jobLauncher.run(
-                eq(fileProcessJob),
-                any(JobParameters.class)))
-                .thenThrow(new JobRestartException(
-                        "Restart recusado para teste"));
+                when(jobLauncher.run(
+                                eq(fileProcessJob),
+                                any(JobParameters.class)))
+                                .thenThrow(new JobRestartException(
+                                                "Restart recusado para teste"));
 
-        when(fileMovementService.moveToError(processingFile))
-                .thenReturn(returnedErrorFile);
+                when(fileMovementService.moverParaErro(processingFile))
+                                .thenReturn(returnedErrorFile);
 
-        assertThrows(
-                JobLaunchException.class,
-                () -> jobService.restart(42L));
+                assertThrows(
+                                JobLaunchException.class,
+                                () -> jobService.restart(42L));
 
-        verify(fileMovementService)
-                .moveToProcessing(errorFile);
+                verify(fileMovementService)
+                                .moveToProcessing(errorFile);
 
-        verify(fileMovementService)
-                .moveToError(processingFile);
-    }
+                verify(fileMovementService)
+                                .moverParaErro(processingFile);
+        }
 }

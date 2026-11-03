@@ -14,9 +14,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
-import br.com.jards.filepulse.batch.enums.FileProcessingStatus;
+import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.exception.JobLaunchException;
-import br.com.jards.filepulse.batch.repository.FileProcessingRepository;
+import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import lombok.extern.log4j.Log4j2;
 
 @Service
@@ -25,11 +25,11 @@ public class JobService {
 
     private final JobLauncher jobLauncher;
     private final Job fileProcessJob;
-    private final FileProcessingRepository fileProcessingRepository;
-    private final FileMovementService fileMovementService;
+    private final ProcessamentoArquivoRepository fileProcessingRepository;
+    private final MovimentacaoArquivoService fileMovementService;
 
-    public JobService(JobLauncher jobLauncher, @Qualifier("fileProcessingJob") Job fileProcessJob,
-            FileProcessingRepository fileProcessingRepository, FileMovementService fileMovementService) {
+    public JobService(JobLauncher jobLauncher, @Qualifier("processarArquivoJob") Job fileProcessJob,
+            ProcessamentoArquivoRepository fileProcessingRepository, MovimentacaoArquivoService fileMovementService) {
         this.jobLauncher = jobLauncher;
         this.fileProcessJob = fileProcessJob;
         this.fileProcessingRepository = fileProcessingRepository;
@@ -41,7 +41,7 @@ public class JobService {
         Long fileProcessingId;
 
         try {
-            fileProcessingId = fileProcessingRepository.create(
+            fileProcessingId = fileProcessingRepository.criar(
                     file.getFileName().toString(),
                     file.toString(),
                     fileHash);
@@ -51,10 +51,10 @@ public class JobService {
             return false;
         }
 
-        var parameters = buildJobParameters(file, fileProcessingId);
+        var parametros = buildJobParameters(file, fileProcessingId);
 
         try {
-            jobLauncher.run(fileProcessJob, parameters);
+            jobLauncher.run(fileProcessJob, parametros);
             return true;
         } catch (JobExecutionAlreadyRunningException
                 | JobRestartException
@@ -66,17 +66,17 @@ public class JobService {
     }
 
     public void restart(Long fileProcessingId) {
-        var processing = fileProcessingRepository.findById(fileProcessingId)
+        var processing = fileProcessingRepository.buscarPorId(fileProcessingId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Processamento não encontrado: %s".formatted(fileProcessingId)));
 
-        if (processing.status() != FileProcessingStatus.FAILED) {
+        if (processing.status() != StatusProcessamentoArquivo.FALHOU) {
             throw new IllegalStateException(
-                    "Apenas processamentos com status FAILED podem ser reiniciados. Status atual: %s"
+                    "Apenas processamentos com status FALHOU podem ser reiniciados. Status atual: %s"
                             .formatted(processing.status()));
         }
 
-        var finalFilePath = processing.finalFilePath();
+        var finalFilePath = processing.caminhoFinalArquivo();
 
         if (finalFilePath == null || finalFilePath.isBlank()) {
             throw new IllegalStateException(
@@ -87,8 +87,8 @@ public class JobService {
 
         try {
             processingFile = fileMovementService.moveToProcessing(Path.of(finalFilePath));
-            var parameters = buildJobParameters(processingFile, fileProcessingId);
-            jobLauncher.run(fileProcessJob, parameters);
+            var parametros = buildJobParameters(processingFile, fileProcessingId);
+            jobLauncher.run(fileProcessJob, parametros);
         } catch (JobExecutionAlreadyRunningException | JobRestartException
                 | JobInstanceAlreadyCompleteException | JobParametersInvalidException e) {
 
@@ -114,7 +114,7 @@ public class JobService {
         }
 
         try {
-            var errorFile = fileMovementService.moveToError(processingFile);
+            var errorFile = fileMovementService.moverParaErro(processingFile);
 
             log.warn("Restart do processamento {} não foi iniciado. Arquivo devolvido para erro: {}",
                     fileProcessingId,

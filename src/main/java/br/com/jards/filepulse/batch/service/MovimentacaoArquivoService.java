@@ -8,17 +8,17 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
-import br.com.jards.filepulse.batch.exception.FileMovementException;
+import br.com.jards.filepulse.batch.exception.MovimentacaoArquivoException;
 import br.com.jards.filepulse.watcher.config.FileStorageProperties;
 import lombok.extern.log4j.Log4j2;
 
 @Service
 @Log4j2
-public class FileMovementService {
+public class MovimentacaoArquivoService {
 
     private final FileStorageProperties properties;
 
-    public FileMovementService(FileStorageProperties properties) {
+    public MovimentacaoArquivoService(FileStorageProperties properties) {
         this.properties = properties;
     }
 
@@ -28,24 +28,25 @@ public class FileMovementService {
             log.info("Arquivo movido para processamento: {}", movedFile);
             return movedFile;
         } catch (IOException e) {
-            throw new FileMovementException(
+            throw new MovimentacaoArquivoException(
                     "Não foi possível mover o arquivo para processamento: %s".formatted(file),
                     e);
         }
     }
 
-    public Path moveToProcessed(Path file) {
+    public Path moverParaProcessados(Path file) {
         try {
             var movedFile = move(file, Path.of(properties.getProcessedDirectory()));
 
             log.info("Arquivo movido para processados: {}", movedFile);
             return movedFile;
         } catch (IOException e) {
-            throw new FileMovementException("Não foi possível mover o arquivo para processados: %s".formatted(file), e);
+            throw new MovimentacaoArquivoException(
+                    "Não foi possível mover o arquivo para processados: %s".formatted(file), e);
         }
     }
 
-    public Path moveToError(Path file) {
+    public Path moverParaErro(Path file) {
         try {
             var movedFile = move(file, Path.of(properties.getErrorDirectory()));
 
@@ -53,7 +54,7 @@ public class FileMovementService {
 
             return movedFile;
         } catch (IOException e) {
-            throw new FileMovementException("Não foi possível mover o arquivo para erro: %s".formatted(file), e);
+            throw new MovimentacaoArquivoException("Não foi possível mover o arquivo para erro: %s".formatted(file), e);
         }
     }
 
@@ -65,7 +66,8 @@ public class FileMovementService {
 
             return movedFile;
         } catch (IOException e) {
-            throw new FileMovementException("Não foi possível mover o arquivo para rejeitados: %s".formatted(file), e);
+            throw new MovimentacaoArquivoException(
+                    "Não foi possível mover o arquivo para rejeitados: %s".formatted(file), e);
         }
     }
 

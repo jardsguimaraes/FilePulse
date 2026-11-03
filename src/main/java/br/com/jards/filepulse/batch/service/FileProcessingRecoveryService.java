@@ -9,10 +9,10 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
-import br.com.jards.filepulse.batch.config.FileProcessingRecoveryProperties;
-import br.com.jards.filepulse.batch.enums.FileProcessingStatus;
-import br.com.jards.filepulse.batch.model.FileProcessing;
-import br.com.jards.filepulse.batch.repository.FileProcessingRepository;
+import br.com.jards.filepulse.batch.config.RecuperacaoProcessamentoArquivoProperties;
+import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
+import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
+import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import br.com.jards.filepulse.watcher.config.FileStorageProperties;
 import br.com.jards.filepulse.watcher.enums.FileRejectionReason;
 import br.com.jards.filepulse.watcher.service.FileRejectionService;
@@ -22,15 +22,16 @@ import lombok.extern.log4j.Log4j2;
 @Log4j2
 public class FileProcessingRecoveryService {
 
-    private final FileProcessingRepository fileProcessingRepository;
-    private final FileProcessingRecoveryProperties recoveryProperties;
-    private final FileMovementService fileMovementService;
+    private final ProcessamentoArquivoRepository fileProcessingRepository;
+    private final RecuperacaoProcessamentoArquivoProperties recoveryProperties;
+    private final MovimentacaoArquivoService fileMovementService;
     private final FileStorageProperties fileStorageProperties;
     private final FileHashService fileHashService;
     private final FileRejectionService fileRejectionService;
 
-    public FileProcessingRecoveryService(FileProcessingRepository fileProcessingRepository,
-            FileProcessingRecoveryProperties recoveryProperties, FileMovementService fileMovementService,
+    public FileProcessingRecoveryService(ProcessamentoArquivoRepository fileProcessingRepository,
+            RecuperacaoProcessamentoArquivoProperties recoveryProperties,
+            MovimentacaoArquivoService fileMovementService,
             FileStorageProperties fileStorageProperties, FileHashService fileHashService,
             FileRejectionService fileRejectionService) {
         this.fileProcessingRepository = fileProcessingRepository;
@@ -53,7 +54,7 @@ public class FileProcessingRecoveryService {
         try (var files = Files.list(processingDirectory)) {
             files.filter(Files::isRegularFile)
                     .forEach(file -> {
-                        fileProcessingRepository.findByFilePath(file.toString())
+                        fileProcessingRepository.buscarPorCaminhoArquivo(file.toString())
                                 .ifPresentOrElse(processing -> reconcileExistingProcessing(file, processing),
                                         () -> reconcileOrphanFile(file));
                     });
@@ -66,7 +67,7 @@ public class FileProcessingRecoveryService {
     private void reconcileOrphanFile(Path file) {
         var fileHash = fileHashService.calculate(file);
 
-        var existsByHash = fileProcessingRepository.existsByHash(fileHash);
+        var existsByHash = fileProcessingRepository.existePorHash(fileHash);
 
         var reason = existsByHash
                 ? FileRejectionReason.ORPHAN_DUPLICATE
@@ -79,41 +80,41 @@ public class FileProcessingRecoveryService {
         recoverOrphanFile(file, fileHash, reason, details);
     }
 
-    private void reconcileExistingProcessing(Path file, FileProcessing processing) {
+    private void reconcileExistingProcessing(Path file, ProcessamentoArquivo processando) {
 
-        switch (processing.status()) {
-            case COMPLETED -> reconcileCompletedProcessing(file, processing, true);
-            case FAILED, ABANDONED -> reconcileCompletedProcessing(file, processing, false);
+        switch (processando.status()) {
+            case COMPLETO -> reconcileCompletedProcessing(file, processando, true);
+            case FALHOU, ABANDONADO -> reconcileCompletedProcessing(file, processando, false);
             default -> log.warn(
                     "Processamento existente ainda não possui estratégia de reconciliação. id: {}, status: {}, arquivo: {}",
-                    processing.id(),
-                    processing.status(),
+                    processando.id(),
+                    processando.status(),
                     file);
         }
     }
 
-    private void reconcileCompletedProcessing(Path file, FileProcessing processing, boolean sucessful) {
+    private void reconcileCompletedProcessing(Path file, ProcessamentoArquivo processando, boolean sucessful) {
         var finalFile = sucessful
-                ? fileMovementService.moveToProcessed(file)
-                : fileMovementService.moveToError(file);
+                ? fileMovementService.moverParaProcessados(file)
+                : fileMovementService.moverParaErro(file);
 
-        var update = fileProcessingRepository.updateFinalFilePath(processing.id(), finalFile.toString(),
-                FileProcessingStatus.COMPLETED);
+        var update = fileProcessingRepository.atualizarCaminhoFinalArquivo(processando.id(), finalFile.toString(),
+                StatusProcessamentoArquivo.COMPLETO);
 
         if (update) {
-            log.warn("Processamento COMPLETED reconciliado. id: {}, origem: {}, destino: {}",
-                    processing.id(),
+            log.warn("Processamento COMPLETO reconciliado. id: {}, origem: {}, destino: {}",
+                    processando.id(),
                     file,
                     finalFile);
         } else {
             log.warn("Caminho final não foi atualizado durante reconciliação. id: {}, arquivo: {}",
-                    processing.id(),
+                    processando.id(),
                     file);
         }
     }
 
     private void recoverOrphanFile(Path file, String fileHash, FileRejectionReason reason, String details) {
-        var finalFile = fileMovementService.moveToError(file);
+        var finalFile = fileMovementService.moverParaErro(file);
 
         fileRejectionService.audit(finalFile, fileHash, reason, details);
 
@@ -122,7 +123,7 @@ public class FileProcessingRecoveryService {
 
     private void recoverAbandonedProcessing() {
         var startedBefore = LocalDateTime.now().minusMinutes(recoveryProperties.getAbandonedAfterMinutes());
-        var candidates = fileProcessingRepository.findAbandonedCandidates(startedBefore);
+        var candidates = fileProcessingRepository.buscarCandidatosAbandonados(startedBefore);
 
         if (candidates.isEmpty()) {
             log.info("Nenhum processamento abandonado encontrado.");
@@ -133,17 +134,17 @@ public class FileProcessingRecoveryService {
 
         candidates.forEach(
                 processing -> {
-                    var file = Path.of(processing.filePath());
+                    var file = Path.of(processing.caminhoArquivo());
 
                     if (Files.exists(file)) {
                         log.warn(
                                 "Processamento abandonado com arquivo disponível. id: {}, arquivo: {}, iniciado em: {}",
                                 processing.id(),
                                 file,
-                                processing.startedAt());
+                                processing.iniciadoEm());
 
-                        var finalFile = fileMovementService.moveToError(file);
-                        var updated = fileProcessingRepository.markAsAbandoned(
+                        var finalFile = fileMovementService.moverParaErro(file);
+                        var updated = fileProcessingRepository.marcarComoAbandonado(
                                 processing.id(),
                                 "Processamento interrompido antes da finalização da aplicação",
                                 finalFile.toString());
@@ -164,7 +165,7 @@ public class FileProcessingRecoveryService {
                                 "Processamento abandonado sem arquivo no caminho esperado. id: {}, arquivo: {}, iniciado em: {}",
                                 processing.id(),
                                 file,
-                                processing.startedAt());
+                                processing.iniciadoEm());
                     }
                 });
     }

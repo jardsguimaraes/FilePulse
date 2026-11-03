@@ -14,42 +14,43 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
-import br.com.jards.filepulse.batch.enums.FileProcessingStatus;
-import br.com.jards.filepulse.batch.model.FileProcessing;
+import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
+import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
 
 @Repository
-public class FileProcessingRepository {
+public class ProcessamentoArquivoRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public FileProcessingRepository(JdbcTemplate jdbcTemplate) {
+    public ProcessamentoArquivoRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public Long create(String fileName, String filePath, String fileHash) {
+    public Long criar(String nomeArquivo, String caminhoArquivo, String hashArquivo) {
         String sql = """
                     INSERT INTO file_processing (file_name, file_path, file_hash, status)
                 VALUES (?, ?, ?, ?)
                 """;
 
-        KeyHolder keyHolder = new GeneratedKeyHolder();
+        KeyHolder chaveGerada = new GeneratedKeyHolder();
 
-        jdbcTemplate.update(connection -> {
-            PreparedStatement statement = connection.prepareStatement(sql, new String[] { "id" });
+        jdbcTemplate.update(conexao -> {
+            PreparedStatement statement = conexao.prepareStatement(sql, new String[] { "id" });
 
-            statement.setString(1, fileName);
-            statement.setString(2, filePath);
-            statement.setString(3, fileHash);
-            statement.setString(4, FileProcessingStatus.PROCESSING.name());
+            statement.setString(1, nomeArquivo);
+            statement.setString(2, caminhoArquivo);
+            statement.setString(3, hashArquivo);
+            statement.setString(4, StatusProcessamentoArquivo.PROCESSANDO.name());
 
             return statement;
-        }, keyHolder);
+        }, chaveGerada);
 
-        return keyHolder.getKey().longValue();
+        return chaveGerada.getKey().longValue();
     }
 
-    public void finish(Long id, FileProcessingStatus status, Long readCount, Long writeCount, Long skipCount,
-            String errorMessage, String finalFilePath) {
+    public void finalizar(Long id, StatusProcessamentoArquivo status, Long quantidadeLida, Long quantidadeGravada,
+            Long quantidadeIgnorada,
+            String mensagemErro, String caminhoFinalArquivo) {
         String sql = """
                 UPDATE file_processing
                 SET status = ?,
@@ -62,10 +63,11 @@ public class FileProcessingRepository {
                 WHERE id = ?
                 """;
 
-        jdbcTemplate.update(sql, status.name(), readCount, writeCount, skipCount, errorMessage, finalFilePath, id);
+        jdbcTemplate.update(sql, status.name(), quantidadeLida, quantidadeGravada, quantidadeIgnorada, mensagemErro,
+                caminhoFinalArquivo, id);
     }
 
-    public boolean existsByHash(String fileHash) {
+    public boolean existePorHash(String hashArquivo) {
         String sql = """
                     SELECT EXISTS (
                         SELECT 1
@@ -74,31 +76,31 @@ public class FileProcessingRepository {
                     )
                 """;
 
-        Boolean exists = jdbcTemplate.queryForObject(sql, Boolean.class, fileHash);
+        Boolean existe = jdbcTemplate.queryForObject(sql, Boolean.class, hashArquivo);
 
-        return Boolean.TRUE.equals(exists);
+        return Boolean.TRUE.equals(existe);
     }
 
-    private FileProcessing mapRow(ResultSet rs, int rowNum) throws SQLException {
-        var finishedAt = rs.getTimestamp("finished_at");
-        return new FileProcessing(
+    private ProcessamentoArquivo mapearLinha(ResultSet rs, int numeroLinha) throws SQLException {
+        var finalizadoEm = rs.getTimestamp("finished_at");
+        return new ProcessamentoArquivo(
                 rs.getLong("id"),
                 rs.getString("file_name"),
                 rs.getString("file_path"),
                 rs.getString("final_file_path"),
                 rs.getString("file_hash"),
-                FileProcessingStatus.valueOf(rs.getString("status")),
+                StatusProcessamentoArquivo.valueOf(rs.getString("status")),
                 rs.getLong("read_count"),
                 rs.getLong("write_count"),
                 rs.getLong("skip_count"),
                 rs.getTimestamp("started_at").toLocalDateTime(),
-                finishedAt != null
-                        ? finishedAt.toLocalDateTime()
+                finalizadoEm != null
+                        ? finalizadoEm.toLocalDateTime()
                         : null,
                 rs.getString("error_message"));
     }
 
-    public List<FileProcessing> findAbandonedCandidates(LocalDateTime startedBefore) {
+    public List<ProcessamentoArquivo> buscarCandidatosAbandonados(LocalDateTime iniciadoAntesDe) {
         String sql = """
                 SELECT
                     id,
@@ -120,11 +122,11 @@ public class FileProcessingRepository {
                 ORDER BY started_at
                 """;
 
-        return jdbcTemplate.query(sql, this::mapRow, FileProcessingStatus.PROCESSING.name(),
-                Timestamp.valueOf(startedBefore));
+        return jdbcTemplate.query(sql, this::mapearLinha, StatusProcessamentoArquivo.PROCESSANDO.name(),
+                Timestamp.valueOf(iniciadoAntesDe));
     }
 
-    public boolean markAsAbandoned(Long id, String errorMessage, String finalFilePath) {
+    public boolean marcarComoAbandonado(Long id, String mensagemErro, String caminhoFinalArquivo) {
         String sql = """
                 UPDATE file_processing
                 SET status = ?,
@@ -136,13 +138,15 @@ public class FileProcessingRepository {
                     AND finished_at IS NULL
                 """;
 
-        var updatedRows = jdbcTemplate.update(sql, FileProcessingStatus.ABANDONED.name(), errorMessage, finalFilePath,
-                id, FileProcessingStatus.PROCESSING.name());
+        var linhasAtualizadas = jdbcTemplate.update(sql, StatusProcessamentoArquivo.ABANDONADO.name(), mensagemErro,
+                caminhoFinalArquivo,
+                id, StatusProcessamentoArquivo.PROCESSANDO.name());
 
-        return updatedRows == 1;
+        return linhasAtualizadas == 1;
     }
 
-    public boolean updateFinalFilePath(Long id, String finalFilePath, FileProcessingStatus status) {
+    public boolean atualizarCaminhoFinalArquivo(Long id, String caminhoFinalArquivo,
+            StatusProcessamentoArquivo status) {
         String sql = """
                     UPDATE file_processing
                     SET final_file_path = ?
@@ -151,12 +155,12 @@ public class FileProcessingRepository {
                         AND final_file_path IS NULL
                 """;
 
-        var updateRows = jdbcTemplate.update(sql, finalFilePath, id, status.name());
+        var linhasAtualizadas = jdbcTemplate.update(sql, caminhoFinalArquivo, id, status.name());
 
-        return updateRows == 1;
+        return linhasAtualizadas == 1;
     }
 
-    public Optional<FileProcessing> findByFilePath(String filePath) {
+    public Optional<ProcessamentoArquivo> buscarPorCaminhoArquivo(String caminhoArquivo) {
         String sql = """
                     SELECT
                         id,
@@ -175,12 +179,12 @@ public class FileProcessingRepository {
                     WHERE file_path = ?
                 """;
 
-        return jdbcTemplate.query(sql, this::mapRow, filePath)
+        return jdbcTemplate.query(sql, this::mapearLinha, caminhoArquivo)
                 .stream()
                 .findFirst();
     }
 
-    public Optional<FileProcessing> findById(Long id) {
+    public Optional<ProcessamentoArquivo> buscarPorId(Long id) {
         String sql = """
                 SELECT
                     id,
@@ -199,12 +203,12 @@ public class FileProcessingRepository {
                 WHERE id = ?
                 """;
 
-        return jdbcTemplate.query(sql, this::mapRow, id)
+        return jdbcTemplate.query(sql, this::mapearLinha, id)
                 .stream()
                 .findFirst();
     }
 
-    public boolean markAsProcessing(Long id, String filePath) {
+    public boolean marcarComoEmProcessamento(Long id, String caminhoArquivo) {
         String sql = """
                 UPDATE file_processing
                 SET status = ?,
@@ -216,18 +220,18 @@ public class FileProcessingRepository {
                     AND status IN (?, ?)
                 """;
 
-        var updatedRows = jdbcTemplate.update(
+        var linhasAtualizadas = jdbcTemplate.update(
                 sql,
-                FileProcessingStatus.PROCESSING.name(),
-                filePath,
+                StatusProcessamentoArquivo.PROCESSANDO.name(),
+                caminhoArquivo,
                 id,
-                FileProcessingStatus.PROCESSING.name(),
-                FileProcessingStatus.FAILED.name());
+                StatusProcessamentoArquivo.PROCESSANDO.name(),
+                StatusProcessamentoArquivo.FALHOU.name());
 
-        return updatedRows == 1;
+        return linhasAtualizadas == 1;
     }
 
-    public List<FileProcessing> findAll(int page, int size) {
+    public List<ProcessamentoArquivo> listarTodos(int pagina, int tamanho) {
         String sql = """
                 SELECT
                     id,
@@ -247,12 +251,12 @@ public class FileProcessingRepository {
                 LIMIT ? OFFSET ?
                     """;
 
-        int offset = Math.multiplyExact(page, size);
+        int deslocamento = Math.multiplyExact(pagina, tamanho);
 
-        return jdbcTemplate.query(sql, this::mapRow, size, offset);
+        return jdbcTemplate.query(sql, this::mapearLinha, tamanho, deslocamento);
     }
 
-    public long countAll() {
+    public long contarTodos() {
         String sql = """
                 SELECT COUNT(*)
                 FROM file_processing

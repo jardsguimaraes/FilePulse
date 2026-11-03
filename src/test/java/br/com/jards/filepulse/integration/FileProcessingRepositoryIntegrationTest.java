@@ -12,8 +12,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import br.com.jards.filepulse.batch.enums.FileProcessingStatus;
-import br.com.jards.filepulse.batch.repository.FileProcessingRepository;
+import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
+import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 
 @SpringBootTest
 @Testcontainers
@@ -25,7 +25,7 @@ class FileProcessingRepositoryIntegrationTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16");
 
     @Autowired
-    private FileProcessingRepository fileProcessingRepository;
+    private ProcessamentoArquivoRepository fileProcessingRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -33,7 +33,7 @@ class FileProcessingRepositoryIntegrationTest {
     @Test
     void deveContarCorretamenteOsProcessamentosCadastrados() {
 
-        long totalInicial = fileProcessingRepository.countAll();
+        long totalInicial = fileProcessingRepository.contarTodos();
 
         jdbcTemplate.update("""
                 INSERT INTO file_processing
@@ -43,7 +43,7 @@ class FileProcessingRepositoryIntegrationTest {
                 "clientes-1.csv",
                 "/entrada/clientes-1.csv",
                 "hash-teste-contagem-1",
-                "COMPLETED");
+                "COMPLETO");
 
         jdbcTemplate.update("""
                 INSERT INTO file_processing
@@ -53,9 +53,9 @@ class FileProcessingRepositoryIntegrationTest {
                 "clientes-2.csv",
                 "/entrada/clientes-2.csv",
                 "hash-teste-contagem-2",
-                "FAILED");
+                "FALHOU");
 
-        long totalFinal = fileProcessingRepository.countAll();
+        long totalFinal = fileProcessingRepository.contarTodos();
 
         assertEquals(totalInicial + 2, totalFinal);
     }
@@ -71,7 +71,7 @@ class FileProcessingRepositoryIntegrationTest {
                 "clientes-ordenacao-1.csv",
                 "/entrada/clientes-ordenacao-1.csv",
                 "hash-teste-ordenacao-1",
-                "COMPLETED");
+                "COMPLETO");
 
         jdbcTemplate.update("""
                 INSERT INTO file_processing
@@ -81,7 +81,7 @@ class FileProcessingRepositoryIntegrationTest {
                 "clientes-ordenacao-2.csv",
                 "/entrada/clientes-ordenacao-2.csv",
                 "hash-teste-ordenacao-2",
-                "FAILED");
+                "FALHOU");
 
         jdbcTemplate.update("""
                 INSERT INTO file_processing
@@ -91,20 +91,20 @@ class FileProcessingRepositoryIntegrationTest {
                 "clientes-ordenacao-3.csv",
                 "/entrada/clientes-ordenacao-3.csv",
                 "hash-teste-ordenacao-3",
-                "COMPLETED");
+                "COMPLETO");
 
-        var processamentos = fileProcessingRepository.findAll(0, 10);
+        var processamentos = fileProcessingRepository.listarTodos(0, 10);
 
         assertEquals(3, processamentos.size());
 
         assertEquals("clientes-ordenacao-3.csv",
-                processamentos.get(0).fileName());
+                processamentos.get(0).nomeArquivo());
 
         assertEquals("clientes-ordenacao-2.csv",
-                processamentos.get(1).fileName());
+                processamentos.get(1).nomeArquivo());
 
         assertEquals("clientes-ordenacao-1.csv",
-                processamentos.get(2).fileName());
+                processamentos.get(2).nomeArquivo());
     }
 
     @Test
@@ -112,11 +112,11 @@ class FileProcessingRepositoryIntegrationTest {
 
         inserirProcessamentos(5);
 
-        var processamentos = fileProcessingRepository.findAll(0, 2);
+        var processamentos = fileProcessingRepository.listarTodos(0, 2);
 
         assertEquals(2, processamentos.size());
-        assertEquals("clientes-5.csv", processamentos.get(0).fileName());
-        assertEquals("clientes-4.csv", processamentos.get(1).fileName());
+        assertEquals("clientes-5.csv", processamentos.get(0).nomeArquivo());
+        assertEquals("clientes-4.csv", processamentos.get(1).nomeArquivo());
     }
 
     @Test
@@ -124,11 +124,11 @@ class FileProcessingRepositoryIntegrationTest {
 
         inserirProcessamentos(5);
 
-        var processamentos = fileProcessingRepository.findAll(1, 2);
+        var processamentos = fileProcessingRepository.listarTodos(1, 2);
 
         assertEquals(2, processamentos.size());
-        assertEquals("clientes-3.csv", processamentos.get(0).fileName());
-        assertEquals("clientes-2.csv", processamentos.get(1).fileName());
+        assertEquals("clientes-3.csv", processamentos.get(0).nomeArquivo());
+        assertEquals("clientes-2.csv", processamentos.get(1).nomeArquivo());
     }
 
     @Test
@@ -136,10 +136,10 @@ class FileProcessingRepositoryIntegrationTest {
 
         inserirProcessamentos(5);
 
-        var processamentos = fileProcessingRepository.findAll(2, 2);
+        var processamentos = fileProcessingRepository.listarTodos(2, 2);
 
         assertEquals(1, processamentos.size());
-        assertEquals("clientes-1.csv", processamentos.get(0).fileName());
+        assertEquals("clientes-1.csv", processamentos.get(0).nomeArquivo());
     }
 
     @Test
@@ -147,7 +147,7 @@ class FileProcessingRepositoryIntegrationTest {
 
         inserirProcessamentos(5);
 
-        var processamentos = fileProcessingRepository.findAll(3, 2);
+        var processamentos = fileProcessingRepository.listarTodos(3, 2);
 
         assertTrue(processamentos.isEmpty());
     }
@@ -155,7 +155,7 @@ class FileProcessingRepositoryIntegrationTest {
     @Test
     void deveRetornarListaVaziaQuandoNaoExistiremProcessamentos() {
 
-        var processamentos = fileProcessingRepository.findAll(0, 10);
+        var processamentos = fileProcessingRepository.listarTodos(0, 10);
 
         assertTrue(processamentos.isEmpty());
     }
@@ -165,17 +165,17 @@ class FileProcessingRepositoryIntegrationTest {
 
         inserirProcessamentos(1);
 
-        var processamentos = fileProcessingRepository.findAll(0, 10);
+        var processamentos = fileProcessingRepository.listarTodos(0, 10);
 
         assertEquals(1, processamentos.size());
 
         var processamento = processamentos.get(0);
 
         assertNotNull(processamento.id());
-        assertEquals("clientes-1.csv", processamento.fileName());
-        assertEquals("/entrada/clientes-1.csv", processamento.filePath());
-        assertEquals("%064d".formatted(1), processamento.fileHash());
-        assertEquals(FileProcessingStatus.COMPLETED, processamento.status());
+        assertEquals("clientes-1.csv", processamento.nomeArquivo());
+        assertEquals("/entrada/clientes-1.csv", processamento.caminhoArquivo());
+        assertEquals("%064d".formatted(1), processamento.hashArquivo());
+        assertEquals(StatusProcessamentoArquivo.COMPLETO, processamento.status());
     }
 
     private void inserirProcessamentos(int quantidade) {
@@ -190,7 +190,7 @@ class FileProcessingRepositoryIntegrationTest {
                     "clientes-" + i + ".csv",
                     "/entrada/clientes-" + i + ".csv",
                     "%064d".formatted(i),
-                    "COMPLETED");
+                    "COMPLETO");
         }
     }
 

@@ -8,24 +8,24 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
 
-import br.com.jards.filepulse.batch.mapper.customerItemReaderMapper;
-import br.com.jards.filepulse.batch.model.CustomerCsvRecord;
+import br.com.jards.filepulse.batch.mapper.ClienteCsvMapper;
+import br.com.jards.filepulse.batch.model.RegistroClienteCsv;
 
 @Configuration
-public class CustomerItemReaderConfig {
+public class ClienteItemReaderConfig {
 
-    @Bean
+    @Bean("customerItemReader")
     @StepScope
-    public FlatFileItemReader<CustomerCsvRecord> customerItemReader(
-            @Value("#{jobParameters['filePath']}") String filePath) {
-        return new FlatFileItemReaderBuilder<CustomerCsvRecord>()
+    public FlatFileItemReader<RegistroClienteCsv> leitorCliente(
+            @Value("#{jobParameters['filePath']}") String caminhoArquivo) {
+        return new FlatFileItemReaderBuilder<RegistroClienteCsv>()
                 .name("customerItemReader")
-                .resource(new FileSystemResource(filePath))
+                .resource(new FileSystemResource(caminhoArquivo))
                 .linesToSkip(1)
                 .delimited()
                 .delimiter("|")
                 .names("name", "cpf", "agency", "account", "value", "referenceMonth")
-                .fieldSetMapper(new customerItemReaderMapper())
+                .fieldSetMapper(new ClienteCsvMapper())
                 .build();
     }
 }
