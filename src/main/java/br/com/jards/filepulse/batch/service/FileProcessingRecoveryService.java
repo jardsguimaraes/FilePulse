@@ -10,7 +10,6 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.batch.config.RecuperacaoProcessamentoArquivoProperties;
-import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import br.com.jards.filepulse.watcher.config.FileStorageProperties;
@@ -93,22 +92,29 @@ public class FileProcessingRecoveryService {
         }
     }
 
-    private void reconcileCompletedProcessing(Path file, ProcessamentoArquivo processando, boolean sucessful) {
-        var finalFile = sucessful
+    private void reconcileCompletedProcessing(Path file, ProcessamentoArquivo processando, boolean successful) {
+
+        var finalFile = successful
                 ? fileMovementService.moverParaProcessados(file)
                 : fileMovementService.moverParaErro(file);
 
-        var update = fileProcessingRepository.atualizarCaminhoFinalArquivo(processando.id(), finalFile.toString(),
-                StatusProcessamentoArquivo.COMPLETO);
+        var atualizado = fileProcessingRepository.atualizarCaminhoFinalArquivo(
+                processando.id(),
+                finalFile.toString(),
+                processando.status());
 
-        if (update) {
-            log.warn("Processamento COMPLETO reconciliado. id: {}, origem: {}, destino: {}",
+        if (atualizado) {
+            log.warn(
+                    "Processamento reconciliado. id: {}, status: {}, origem: {}, destino: {}",
                     processando.id(),
+                    processando.status(),
                     file,
                     finalFile);
         } else {
-            log.warn("Caminho final não foi atualizado durante reconciliação. id: {}, arquivo: {}",
+            log.warn(
+                    "Caminho final não foi atualizado durante reconciliação. id: {}, status: {}, arquivo: {}",
                     processando.id(),
+                    processando.status(),
                     file);
         }
     }

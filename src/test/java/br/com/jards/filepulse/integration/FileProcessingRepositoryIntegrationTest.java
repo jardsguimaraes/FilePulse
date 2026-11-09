@@ -3,6 +3,8 @@ package br.com.jards.filepulse.integration;
 import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -192,6 +194,59 @@ class FileProcessingRepositoryIntegrationTest {
                     "%064d".formatted(i),
                     "COMPLETO");
         }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StatusProcessamentoArquivo.class, names = { "COMPLETO", "FALHOU", "ABANDONADO" })
+    void deveAtualizarCaminhoFinalPreservandoStatus(StatusProcessamentoArquivo status) {
+
+        Long id = fileProcessingRepository.criar(
+                "clientes-reconciliacao.csv",
+                "/processamento/clientes-reconciliacao.csv",
+                java.util.UUID.randomUUID().toString());
+
+        jdbcTemplate.update("""
+                UPDATE file_processing
+                SET status = ?,
+                    final_file_path = NULL
+                WHERE id = ?
+                """, status.name(), id);
+
+        String destino = status == StatusProcessamentoArquivo.COMPLETO
+                ? "/processados/clientes-reconciliacao.csv"
+                : "/erro/clientes-reconciliacao.csv";
+
+        boolean atualizado = fileProcessingRepository.atualizarCaminhoFinalArquivo(id, destino, status);
+        assertTrue(atualizado);
+
+        var processamento = fileProcessingRepository.buscarPorId(id).orElseThrow();
+
+        assertEquals(status, processamento.status());
+        assertEquals(destino, processamento.caminhoFinalArquivo());
+    }
+
+    @Test
+    void naoDeveAtualizarCaminhoQuandoStatusForDiferente() {
+
+        Long id = fileProcessingRepository.criar(
+                "clientes-status-divergente.csv",
+                "/processamento/clientes-status-divergente.csv",
+                java.util.UUID.randomUUID().toString());
+
+        boolean atualizado = fileProcessingRepository
+                .atualizarCaminhoFinalArquivo(
+                        id,
+                        "/processados/clientes-status-divergente.csv",
+                        StatusProcessamentoArquivo.COMPLETO);
+
+        assertFalse(atualizado);
+
+        var processamento = fileProcessingRepository.buscarPorId(id)
+                .orElseThrow();
+
+        assertEquals(StatusProcessamentoArquivo.PROCESSANDO,
+                processamento.status());
+        assertNull(processamento.caminhoFinalArquivo());
     }
 
 }

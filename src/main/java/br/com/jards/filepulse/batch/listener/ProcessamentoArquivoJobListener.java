@@ -63,9 +63,7 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
                                 .sum();
 
                 var quantidadeIgnorada = etapas.stream()
-                                .mapToLong(step -> step.getSkipCount()
-                                                + step.getProcessSkipCount()
-                                                + step.getWriteSkipCount())
+                                .mapToLong(step -> step.getSkipCount())
                                 .sum();
 
                 var status = execucaoJob.getStatus() == BatchStatus.COMPLETED
