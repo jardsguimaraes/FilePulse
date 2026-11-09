@@ -32,10 +32,10 @@ fileprocessor:
         diretorio-erro: ./files/erro
         diretorio-rejeitados: ./files/rejeitados
     stability:
-        stable-checks: 3
-        max-attempts: 10
-        check-interval-ms: 1000
-        max-retries: 3
-        retry-interval-ms: 5000
+        verificacoes-estabilidade: 3
+        maximo-tentativas: 10
+        intervalo-verificacao-ms: 1000
+        maximo-retentativas: 3
+        intervalo-retentativa-ms: 5000
     recovery:
         abandoned-after-minutes: 30

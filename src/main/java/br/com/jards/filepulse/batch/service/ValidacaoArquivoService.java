@@ -6,15 +6,15 @@ import java.nio.file.Path;
 
 import org.springframework.stereotype.Service;
 
-import br.com.jards.filepulse.watcher.config.FileStabilityProperties;
+import br.com.jards.filepulse.watcher.config.EstabilidadeArquivoProperties;
 
 @Service
 public class ValidacaoArquivoService {
 
-    private final FileStabilityProperties propriedadesEstabilidade;
+    private final EstabilidadeArquivoProperties propriedadesEstabilidade;
     private static final String CABECALHO_ESPERADO = "Nome|CPF|Agência|Conta|Valor|Mês de Referência";
 
-    public ValidacaoArquivoService(FileStabilityProperties propriedadesEstabilidade) {
+    public ValidacaoArquivoService(EstabilidadeArquivoProperties propriedadesEstabilidade) {
         this.propriedadesEstabilidade = propriedadesEstabilidade;
     }
 
@@ -35,8 +35,8 @@ public class ValidacaoArquivoService {
             int verificacoesEstaveis = 0;
             int tentativas = 0;
 
-            while (verificacoesEstaveis < propriedadesEstabilidade.getStableChecks()
-                    && tentativas < propriedadesEstabilidade.getMaxAttempts()) {
+            while (verificacoesEstaveis < propriedadesEstabilidade.getVerificacoesEstabilidade()
+                    && tentativas < propriedadesEstabilidade.getMaximoTentativas()) {
                 long tamanhoAtual = Files.size(arquivo);
 
                 if (tamanhoAtual == tamanhoAnterior) {
@@ -47,10 +47,10 @@ public class ValidacaoArquivoService {
 
                 tamanhoAnterior = tamanhoAtual;
                 tentativas++;
-                Thread.sleep(propriedadesEstabilidade.getCheckIntervalMs());
+                Thread.sleep(propriedadesEstabilidade.getIntervaloVerificacaoMs());
             }
 
-            return verificacoesEstaveis >= propriedadesEstabilidade.getStableChecks();
+            return verificacoesEstaveis >= propriedadesEstabilidade.getVerificacoesEstabilidade();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;

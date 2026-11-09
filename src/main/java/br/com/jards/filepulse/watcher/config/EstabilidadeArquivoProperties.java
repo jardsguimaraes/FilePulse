@@ -8,11 +8,11 @@ import lombok.Setter;
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "fileprocessor.stability")
-public class FileStabilityProperties {
+public class EstabilidadeArquivoProperties {
 
-    private int stableChecks;
-    private int maxAttempts;
-    private long checkIntervalMs;
-    private int maxRetries;
-    private long retryIntervalMs;
+    private int verificacoesEstabilidade;
+    private int maximoTentativas;
+    private long intervaloVerificacaoMs;
+    private int maximoRetentativas;
+    private long intervaloRetentativaMs;
 }
