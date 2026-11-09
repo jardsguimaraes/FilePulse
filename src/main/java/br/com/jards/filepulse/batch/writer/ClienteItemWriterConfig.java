@@ -10,10 +10,10 @@ import org.springframework.context.annotation.Configuration;
 import br.com.jards.filepulse.batch.model.Cliente;
 
 @Configuration
-public class CustomerWriterConfig {
+public class ClienteItemWriterConfig {
 
-    @Bean
-    public JdbcBatchItemWriter<Cliente> customerItemWriter(DataSource dataSource) {
+    @Bean("customerItemWriter")
+    public JdbcBatchItemWriter<Cliente> escritorCliente(DataSource dataSource) {
         return new JdbcBatchItemWriterBuilder<Cliente>()
                 .dataSource(dataSource)
                 .sql(

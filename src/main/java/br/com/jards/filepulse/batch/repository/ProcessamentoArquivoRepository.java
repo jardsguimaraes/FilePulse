@@ -35,14 +35,14 @@ public class ProcessamentoArquivoRepository {
         KeyHolder chaveGerada = new GeneratedKeyHolder();
 
         jdbcTemplate.update(conexao -> {
-            PreparedStatement statement = conexao.prepareStatement(sql, new String[] { "id" });
+            PreparedStatement declaracao = conexao.prepareStatement(sql, new String[] { "id" });
 
-            statement.setString(1, nomeArquivo);
-            statement.setString(2, caminhoArquivo);
-            statement.setString(3, hashArquivo);
-            statement.setString(4, StatusProcessamentoArquivo.PROCESSANDO.name());
+            declaracao.setString(1, nomeArquivo);
+            declaracao.setString(2, caminhoArquivo);
+            declaracao.setString(3, hashArquivo);
+            declaracao.setString(4, StatusProcessamentoArquivo.PROCESSANDO.name());
 
-            return statement;
+            return declaracao;
         }, chaveGerada);
 
         return chaveGerada.getKey().longValue();

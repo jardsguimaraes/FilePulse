@@ -11,18 +11,18 @@ import jakarta.annotation.PostConstruct;
 @Component
 public class FileStorageInitializer {
 
-    private final FileStorageProperties properties;
+    private final ArmazenamentoArquivoProperties properties;
 
-    public FileStorageInitializer(FileStorageProperties properties) {
+    public FileStorageInitializer(ArmazenamentoArquivoProperties properties) {
         this.properties = properties;
     }
 
     @PostConstruct
     public void initialize() throws IOException {
-        Files.createDirectories(Path.of(properties.getInputDirectory()));
-        Files.createDirectories(Path.of(properties.getProcessingDirectory()));
-        Files.createDirectories(Path.of(properties.getProcessedDirectory()));
-        Files.createDirectories(Path.of(properties.getErrorDirectory()));
-        Files.createDirectories(Path.of(properties.getRejectedDirectory()));
+        Files.createDirectories(Path.of(properties.getDiretorioEntrada()));
+        Files.createDirectories(Path.of(properties.getDiretorioProcessamento()));
+        Files.createDirectories(Path.of(properties.getDiretorioProcessados()));
+        Files.createDirectories(Path.of(properties.getDiretorioErro()));
+        Files.createDirectories(Path.of(properties.getDiretorioRejeitados()));
     }
 }

@@ -8,11 +8,11 @@ import lombok.Setter;
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "fileprocessor.directory")
-public class FileStorageProperties {
+public class ArmazenamentoArquivoProperties {
 
-    private String inputDirectory;
-    private String processingDirectory;
-    private String processedDirectory;
-    private String errorDirectory;
-    private String rejectedDirectory;
+    private String diretorioEntrada;
+    private String diretorioProcessamento;
+    private String diretorioProcessados;
+    private String diretorioErro;
+    private String diretorioRejeitados;
 }

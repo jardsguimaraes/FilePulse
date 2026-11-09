@@ -19,12 +19,12 @@ import lombok.extern.log4j.Log4j2;
 
 @Configuration
 @Log4j2
-public class CustomerProcessingStepConfig {
+public class ProcessamentoClienteStepConfig {
 
     private final JobRepository jobRepository;
     private final PlatformTransactionManager transactionManager;
 
-    public CustomerProcessingStepConfig(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+    public ProcessamentoClienteStepConfig(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
     }

@@ -20,7 +20,7 @@ import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.repository.JobRestartException;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
-import br.com.jards.filepulse.batch.exception.JobLaunchException;
+import br.com.jards.filepulse.batch.exception.InicializacaoJobException;
 import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 
@@ -64,7 +64,7 @@ public class JobServiceTest {
 
                 assertThrows(
                                 IllegalStateException.class,
-                                () -> jobService.restart(42L));
+                                () -> jobService.reiniciar(42L));
         }
 
         @Test
@@ -90,13 +90,13 @@ public class JobServiceTest {
                 when(fileProcessingRepository.buscarPorId(42L))
                                 .thenReturn(Optional.of(processing));
 
-                when(fileMovementService.moveToProcessing(errorFile))
+                when(fileMovementService.moverParaProcessamento(errorFile))
                                 .thenReturn(processingFile);
 
-                jobService.restart(42L);
+                jobService.reiniciar(42L);
 
                 verify(fileMovementService)
-                                .moveToProcessing(errorFile);
+                                .moverParaProcessamento(errorFile);
 
                 var parametersCaptor = ArgumentCaptor.forClass(JobParameters.class);
 
@@ -139,7 +139,7 @@ public class JobServiceTest {
                 when(fileProcessingRepository.buscarPorId(42L))
                                 .thenReturn(Optional.of(processing));
 
-                when(fileMovementService.moveToProcessing(errorFile))
+                when(fileMovementService.moverParaProcessamento(errorFile))
                                 .thenReturn(processingFile);
 
                 when(jobLauncher.run(
@@ -152,11 +152,11 @@ public class JobServiceTest {
                                 .thenReturn(returnedErrorFile);
 
                 assertThrows(
-                                JobLaunchException.class,
-                                () -> jobService.restart(42L));
+                                InicializacaoJobException.class,
+                                () -> jobService.reiniciar(42L));
 
                 verify(fileMovementService)
-                                .moveToProcessing(errorFile);
+                                .moverParaProcessamento(errorFile);
 
                 verify(fileMovementService)
                                 .moverParaErro(processingFile);

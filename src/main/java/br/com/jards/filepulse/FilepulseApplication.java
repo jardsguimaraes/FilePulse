@@ -5,12 +5,12 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 import br.com.jards.filepulse.batch.config.RecuperacaoProcessamentoArquivoProperties;
+import br.com.jards.filepulse.watcher.config.ArmazenamentoArquivoProperties;
 import br.com.jards.filepulse.watcher.config.FileStabilityProperties;
-import br.com.jards.filepulse.watcher.config.FileStorageProperties;
 
 @SpringBootApplication
 @EnableConfigurationProperties({
-		FileStorageProperties.class,
+		ArmazenamentoArquivoProperties.class,
 		FileStabilityProperties.class,
 		RecuperacaoProcessamentoArquivoProperties.class })
 public class FilepulseApplication {

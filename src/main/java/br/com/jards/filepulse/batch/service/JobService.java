@@ -15,7 +15,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
-import br.com.jards.filepulse.batch.exception.JobLaunchException;
+import br.com.jards.filepulse.batch.exception.InicializacaoJobException;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import lombok.extern.log4j.Log4j2;
 
@@ -24,106 +24,109 @@ import lombok.extern.log4j.Log4j2;
 public class JobService {
 
     private final JobLauncher jobLauncher;
-    private final Job fileProcessJob;
-    private final ProcessamentoArquivoRepository fileProcessingRepository;
-    private final MovimentacaoArquivoService fileMovementService;
+    private final Job processamentoArquivoJob;
+    private final ProcessamentoArquivoRepository processamentoArquivoRepository;
+    private final MovimentacaoArquivoService movimentacaoArquivoService;
 
-    public JobService(JobLauncher jobLauncher, @Qualifier("processarArquivoJob") Job fileProcessJob,
-            ProcessamentoArquivoRepository fileProcessingRepository, MovimentacaoArquivoService fileMovementService) {
+    public JobService(JobLauncher jobLauncher, @Qualifier("processarArquivoJob") Job processamentoArquivoJob,
+            ProcessamentoArquivoRepository processamentoArquivoRepository,
+            MovimentacaoArquivoService movimentacaoArquivoService) {
         this.jobLauncher = jobLauncher;
-        this.fileProcessJob = fileProcessJob;
-        this.fileProcessingRepository = fileProcessingRepository;
-        this.fileMovementService = fileMovementService;
+        this.processamentoArquivoJob = processamentoArquivoJob;
+        this.processamentoArquivoRepository = processamentoArquivoRepository;
+        this.movimentacaoArquivoService = movimentacaoArquivoService;
     }
 
-    public boolean start(Path file, String fileHash) {
+    public boolean iniciar(Path arquivo, String hashArquivo) {
 
-        Long fileProcessingId;
+        Long idProcessamentoArquivo;
 
         try {
-            fileProcessingId = fileProcessingRepository.criar(
-                    file.getFileName().toString(),
-                    file.toString(),
-                    fileHash);
+            idProcessamentoArquivo = processamentoArquivoRepository.criar(
+                    arquivo.getFileName().toString(),
+                    arquivo.toString(),
+                    hashArquivo);
 
         } catch (DuplicateKeyException e) {
-            log.warn("Processamento não iniciado. Já existe um arquivo registrado com o hash: {}", fileHash);
+            log.warn("Processamento não iniciado. Já existe um arquivo registrado com o hash: {}", hashArquivo);
             return false;
         }
 
-        var parametros = buildJobParameters(file, fileProcessingId);
+        var parametros = construirParametrosJob(arquivo, idProcessamentoArquivo);
 
         try {
-            jobLauncher.run(fileProcessJob, parametros);
+            jobLauncher.run(processamentoArquivoJob, parametros);
             return true;
         } catch (JobExecutionAlreadyRunningException
                 | JobRestartException
                 | JobInstanceAlreadyCompleteException
                 | JobParametersInvalidException e) {
-            log.error("Erro ao iniciar o Job para o arquivo {}", file, e);
-            throw new JobLaunchException("Não foi possível iniciar o Job para o arquivo %s".formatted(file), e);
-        }
-    }
-
-    public void restart(Long fileProcessingId) {
-        var processing = fileProcessingRepository.buscarPorId(fileProcessingId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Processamento não encontrado: %s".formatted(fileProcessingId)));
-
-        if (processing.status() != StatusProcessamentoArquivo.FALHOU) {
-            throw new IllegalStateException(
-                    "Apenas processamentos com status FALHOU podem ser reiniciados. Status atual: %s"
-                            .formatted(processing.status()));
-        }
-
-        var finalFilePath = processing.caminhoFinalArquivo();
-
-        if (finalFilePath == null || finalFilePath.isBlank()) {
-            throw new IllegalStateException(
-                    "Processamento não possui arquivo disponível para restart: %s".formatted(fileProcessingId));
-        }
-
-        Path processingFile = null;
-
-        try {
-            processingFile = fileMovementService.moveToProcessing(Path.of(finalFilePath));
-            var parametros = buildJobParameters(processingFile, fileProcessingId);
-            jobLauncher.run(fileProcessJob, parametros);
-        } catch (JobExecutionAlreadyRunningException | JobRestartException
-                | JobInstanceAlreadyCompleteException | JobParametersInvalidException e) {
-
-            rollbackFileToError(processingFile, fileProcessingId);
-
-            log.error("Erro ao reiniciar o processamento {}", fileProcessingId, e);
-            throw new JobLaunchException("Não foi possível reiniciar o processamento %d".formatted(fileProcessingId),
+            log.error("Erro ao iniciar o Job para o arquivo {}", arquivo, e);
+            throw new InicializacaoJobException("Não foi possível iniciar o Job para o arquivo %s".formatted(arquivo),
                     e);
         }
     }
 
-    private JobParameters buildJobParameters(Path file, Long fileProcessingId) {
+    public void reiniciar(Long idProcessamentoArquivo) {
+        var processamento = processamentoArquivoRepository.buscarPorId(idProcessamentoArquivo)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Processamento não encontrado: %s".formatted(idProcessamentoArquivo)));
+
+        if (processamento.status() != StatusProcessamentoArquivo.FALHOU) {
+            throw new IllegalStateException(
+                    "Apenas processamentos com status FALHOU podem ser reiniciados. Status atual: %s"
+                            .formatted(processamento.status()));
+        }
+
+        var caminhoFinalArquivo = processamento.caminhoFinalArquivo();
+
+        if (caminhoFinalArquivo == null || caminhoFinalArquivo.isBlank()) {
+            throw new IllegalStateException(
+                    "Processamento não possui arquivo disponível para restart: %s".formatted(idProcessamentoArquivo));
+        }
+
+        Path arquivoProcessamento = null;
+
+        try {
+            arquivoProcessamento = movimentacaoArquivoService.moverParaProcessamento(Path.of(caminhoFinalArquivo));
+            var parametros = construirParametrosJob(arquivoProcessamento, idProcessamentoArquivo);
+            jobLauncher.run(processamentoArquivoJob, parametros);
+        } catch (JobExecutionAlreadyRunningException | JobRestartException
+                | JobInstanceAlreadyCompleteException | JobParametersInvalidException e) {
+
+            devolverArquivoParaErro(arquivoProcessamento, idProcessamentoArquivo);
+
+            log.error("Erro ao reiniciar o processamento {}", idProcessamentoArquivo, e);
+            throw new InicializacaoJobException(
+                    "Não foi possível reiniciar o processamento %d".formatted(idProcessamentoArquivo),
+                    e);
+        }
+    }
+
+    private JobParameters construirParametrosJob(Path arquivo, Long idProcessamentoArquivo) {
         return new JobParametersBuilder()
-                .addString("filePath", file.toString(), false)
-                .addLong("fileProcessingId", fileProcessingId)
+                .addString("filePath", arquivo.toString(), false)
+                .addLong("fileProcessingId", idProcessamentoArquivo)
                 .addLong("timestamp", System.currentTimeMillis(), false)
                 .toJobParameters();
     }
 
-    private void rollbackFileToError(Path processingFile, Long fileProcessingId) {
-        if (processingFile == null) {
+    private void devolverArquivoParaErro(Path arquivoProcessamento, Long idProcessamentoArquivo) {
+        if (arquivoProcessamento == null) {
             return;
         }
 
         try {
-            var errorFile = fileMovementService.moverParaErro(processingFile);
+            var arquivoErro = movimentacaoArquivoService.moverParaErro(arquivoProcessamento);
 
             log.warn("Restart do processamento {} não foi iniciado. Arquivo devolvido para erro: {}",
-                    fileProcessingId,
-                    errorFile);
-        } catch (RuntimeException rollbackException) {
+                    idProcessamentoArquivo,
+                    arquivoErro);
+        } catch (RuntimeException excecaoReversao) {
             log.error("Falha ao devolver arquivo para erro após falha no restart do processamento {}. Arquivo: {}",
-                    fileProcessingId,
-                    processingFile,
-                    rollbackException);
+                    idProcessamentoArquivo,
+                    arquivoProcessamento,
+                    excecaoReversao);
         }
     }
 }

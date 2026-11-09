@@ -18,7 +18,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import br.com.jards.filepulse.batch.service.JobService;
-import br.com.jards.filepulse.watcher.config.FileStorageProperties;
+import br.com.jards.filepulse.watcher.config.ArmazenamentoArquivoProperties;
 
 @SpringBootTest
 @Testcontainers
@@ -32,7 +32,7 @@ public class FileProcessingRestartIntegrationTest {
     Path tempDir;
 
     @Autowired
-    private FileStorageProperties fileStorageProperties;
+    private ArmazenamentoArquivoProperties fileStorageProperties;
 
     @Autowired
     private JobService jobService;
@@ -54,11 +54,11 @@ public class FileProcessingRestartIntegrationTest {
         errorDirectory = createDirectory("erro");
         rejectedDirectory = createDirectory("rejeitados");
 
-        fileStorageProperties.setInputDirectory(inputDirectory.toString());
-        fileStorageProperties.setProcessingDirectory(processingDirectory.toString());
-        fileStorageProperties.setProcessedDirectory(processedDirectory.toString());
-        fileStorageProperties.setErrorDirectory(errorDirectory.toString());
-        fileStorageProperties.setRejectedDirectory(rejectedDirectory.toString());
+        fileStorageProperties.setDiretorioEntrada(inputDirectory.toString());
+        fileStorageProperties.setDiretorioProcessamento(processingDirectory.toString());
+        fileStorageProperties.setDiretorioProcessados(processedDirectory.toString());
+        fileStorageProperties.setDiretorioErro(errorDirectory.toString());
+        fileStorageProperties.setDiretorioRejeitados(rejectedDirectory.toString());
     }
 
     @Test
@@ -68,7 +68,7 @@ public class FileProcessingRestartIntegrationTest {
         assertTrue(Files.exists(csv));
 
         createFailureOnce31stCustomer();
-        var started = jobService.start(csv, "hash-restart-integration-test");
+        var started = jobService.iniciar(csv, "hash-restart-integration-test");
 
         assertTrue(started);
 
@@ -113,7 +113,7 @@ public class FileProcessingRestartIntegrationTest {
 
         }
 
-        jobService.restart(fileProcessigId);
+        jobService.reiniciar(fileProcessigId);
 
         var customersAfterRestart = jdbcTemplate.queryForObject("""
                 SELECT COUNT(*)
