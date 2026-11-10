@@ -24,7 +24,8 @@ public class CustomerItemProcessorTest {
                 "1234",
                 "000001-0",
                 "150.50",
-                "09/26");
+                "09/26",
+                null);
 
         var cliente = processamento.process(record);
 
@@ -42,7 +43,8 @@ public class CustomerItemProcessorTest {
                 "1234",
                 "000001-0",
                 "150.50",
-                "09/26");
+                "09/26",
+                null);
 
         var cliente = processor.process(record);
 
@@ -66,7 +68,8 @@ public class CustomerItemProcessorTest {
                 "1234",
                 "000001-0",
                 "150.50",
-                "09/26");
+                "09/26",
+                null);
 
         assertThrows(
                 RegistroInvalidoException.class,

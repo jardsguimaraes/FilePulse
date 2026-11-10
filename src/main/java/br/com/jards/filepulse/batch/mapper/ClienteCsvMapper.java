@@ -16,7 +16,8 @@ public class ClienteCsvMapper implements FieldSetMapper<RegistroClienteCsv> {
                 campos.readString("agency"),
                 campos.readString("account"),
                 campos.readString("value"),
-                campos.readString("referenceMonth").trim());
+                campos.readString("referenceMonth").trim(),
+                null);
     }
 
 }

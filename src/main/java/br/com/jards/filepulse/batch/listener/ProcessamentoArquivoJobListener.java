@@ -11,8 +11,10 @@ import org.springframework.stereotype.Component;
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import br.com.jards.filepulse.batch.service.MovimentacaoArquivoService;
+import lombok.extern.log4j.Log4j2;
 
 @Component
+@Log4j2
 public class ProcessamentoArquivoJobListener implements JobExecutionListener {
 
         private final ProcessamentoArquivoRepository processamentoArquivoRepository;
@@ -66,9 +68,15 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
                                 .mapToLong(step -> step.getSkipCount())
                                 .sum();
 
-                var status = execucaoJob.getStatus() == BatchStatus.COMPLETED
-                                ? StatusProcessamentoArquivo.COMPLETO
-                                : StatusProcessamentoArquivo.FALHOU;
+                StatusProcessamentoArquivo status;
+
+                if (execucaoJob.getStatus() == BatchStatus.COMPLETED) {
+                        status = quantidadeIgnorada > 0
+                                        ? StatusProcessamentoArquivo.COMPLETO_COM_FALHAS
+                                        : StatusProcessamentoArquivo.COMPLETO;
+                } else {
+                        status = StatusProcessamentoArquivo.FALHOU;
+                }
 
                 String mensagemErro = null;
                 if (status == StatusProcessamentoArquivo.FALHOU) {
@@ -82,7 +90,8 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
                 var caminhoArquivo = execucaoJob.getJobParameters().getString("filePath");
                 Path arquivoFinal;
 
-                if (status == StatusProcessamentoArquivo.COMPLETO) {
+                if (status == StatusProcessamentoArquivo.COMPLETO
+                                || status == StatusProcessamentoArquivo.COMPLETO_COM_FALHAS) {
                         arquivoFinal = movimentacaoArquivoService.moverParaProcessados(Path.of(caminhoArquivo));
                 } else {
                         arquivoFinal = movimentacaoArquivoService.moverParaErro(Path.of(caminhoArquivo));
@@ -91,6 +100,13 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
                 processamentoArquivoRepository.finalizar(id, status, quantidadeLida, quantidadeGravada,
                                 quantidadeIgnorada,
                                 mensagemErro, arquivoFinal.toString());
+
+                log.info("Processamento finalizado. ID: {}, Status FilePulse: {}, Lidos: {}, Gravados: {}, Ignorados: {}",
+                                id,
+                                status,
+                                quantidadeLida,
+                                quantidadeGravada,
+                                quantidadeIgnorada);
 
         }
 }

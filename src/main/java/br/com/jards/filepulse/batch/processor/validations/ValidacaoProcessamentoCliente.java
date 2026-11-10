@@ -43,7 +43,7 @@ public class ValidacaoProcessamentoCliente {
         try {
             return new BigDecimal(valor);
         } catch (Exception e) {
-            throw new RegistroInvalidoException("Valor inválido: %s".formatted(valor));
+            throw new RegistroInvalidoException("Valor inválido");
         }
     }
 
@@ -51,7 +51,7 @@ public class ValidacaoProcessamentoCliente {
         try {
             YearMonth.parse(mesReferencia, FORMATADOR_MES_REFERENCIA);
         } catch (DateTimeParseException e) {
-            throw new RegistroInvalidoException("Mês de referência inválido: %s".formatted(mesReferencia));
+            throw new RegistroInvalidoException("Mês de referência inválido");
         }
     }
 
@@ -59,7 +59,7 @@ public class ValidacaoProcessamentoCliente {
         var cpfNormalizado = cpf.replaceAll("\\D", "");
 
         if ((cpfNormalizado.length() != 11) || (!cpfValido(cpfNormalizado))) {
-            throw new RegistroInvalidoException("CPF inválido: %s".formatted(cpf));
+            throw new RegistroInvalidoException("CPF inválido");
         }
 
         return cpfNormalizado;
