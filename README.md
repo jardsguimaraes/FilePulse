@@ -28,77 +28,85 @@ versionamento de schema e processamento parcial controlado.
 
 🚧 **Em desenvolvimento**
 
-O núcleo de ingestão e processamento local está funcional.
+O núcleo de ingestão e processamento local está funcional. A estrutura
+de cargas lógicas foi incorporada, mas a conclusão automática da carga
+ainda é uma evolução pendente.
 
 ### Implementado
 
--   Java NIO `WatchService`;
--   validação de extensão e cabeçalho;
--   verificação de estabilidade do arquivo com retry configurável;
--   movimentação entre diretórios de estado;
--   proteção contra colisão de nomes;
--   SHA-256 do arquivo completo;
--   idempotência baseada no conteúdo;
--   proteção concorrente com restrição `UNIQUE` no PostgreSQL;
--   Spring Batch com Reader, Processor e Writer;
--   processamento transacional por chunks;
--   skip de registros inválidos;
--   `JdbcBatchItemWriter`;
--   PostgreSQL;
--   Flyway;
--   controle do ciclo de vida em `file_processing`;
--   auditoria de rejeições em `file_rejection`;
--   `final_file_path`;
--   recuperação de processamentos abandonados;
--   detecção de arquivos órfãos em `/processamento`;
--   reconciliação entre estado persistido e filesystem no startup.
+- Java NIO `WatchService`;
+- validação de extensão, cabeçalho e metadados CSV;
+- verificação de estabilidade do arquivo com retry configurável;
+- movimentação entre diretórios de estado;
+- proteção contra colisão de nomes;
+- SHA-256 do arquivo completo e idempotência por conteúdo;
+- proteção concorrente com restrição `UNIQUE` no PostgreSQL;
+- Spring Batch com Reader, Processor e Writer;
+- processamento transacional por chunks;
+- skip de registros inválidos e auditoria dos registros ignorados;
+- `JdbcBatchItemWriter`;
+- PostgreSQL e Flyway;
+- rastreabilidade `customer -> file_processing`;
+- controle do ciclo de vida em `file_processing`;
+- auditoria de rejeições em `file_rejection`;
+- `final_file_path`;
+- restart de processamentos com falha, preservando chunks confirmados;
+- recuperação de processamentos abandonados;
+- detecção de arquivos órfãos em `/processamento`;
+- reconciliação entre estado persistido e filesystem no startup;
+- tabela `logical_load` e associação de arquivos e registros à carga;
+- suporte inicial a arquivos `ORIGINAL` e `COMPLEMENTAR`;
+- identificação de registros por `id_registro` e unicidade por carga;
+- testes automatizados e de integração com Testcontainers.
 
 ### Em evolução
 
--   rastreabilidade `customer -> file_processing`;
--   estratégia completa de processamento parcial controlado;
--   testes automatizados e de integração;
--   benchmarks com grandes massas de dados.
+- conclusão automática da carga lógica após conciliação dos registros;
+- política de tratamento de duplicidades entre arquivos complementares;
+- testes ponta a ponta do ciclo ORIGINAL → COMPLEMENTAR → CONCLUIDA;
+- benchmarks com grandes massas de dados.
 
 ### Arquitetura planejada
 
--   API REST e Spring WebFlux;
--   Server-Sent Events (SSE);
--   dashboard;
--   Actuator, Micrometer, Prometheus e Grafana;
--   Docker / Docker Compose;
--   Testcontainers;
--   OpenAPI / Swagger;
--   RabbitMQ e processamento distribuído.
+- API REST e Spring WebFlux;
+- Server-Sent Events (SSE);
+- dashboard;
+- métricas com Micrometer, Prometheus e Grafana;
+- Docker / Docker Compose para distribuição da aplicação;
+- OpenAPI / Swagger;
+- RabbitMQ e processamento distribuído.
 
 ------------------------------------------------------------------------
 
 ## 🛠️ Stack tecnológica
 
-  Tecnologia                Papel                         Estado
-  ------------------------- ----------------------------- --------
-  Java 25                   Linguagem principal           ✅
-  Spring Boot 3.5.x         Framework                     ✅
-  Spring Batch 5.x          Processamento em lote         ✅
-  Java NIO WatchService     Monitoramento do filesystem   ✅
-  PostgreSQL                Persistência                  ✅
-  JDBC Batch                Escrita otimizada             ✅
-  Flyway                    Versionamento do schema       ✅
-  Maven                     Build e dependências          ✅
-  Spring WebFlux            API reativa                   🔜
-  SSE                       Eventos em tempo real         🔜
-  RabbitMQ                  Mensageria/distribuição       🔜
-  Actuator / Micrometer     Observabilidade               🔜
-  Prometheus / Grafana      Métricas                      🔜
-  JUnit / Testcontainers    Testes                        🔜
-  Docker / Docker Compose   Containerização               🔜
-  OpenAPI / Swagger         Documentação da API           🔜
+| Tecnologia | Papel | Estado |
+| --- | --- | --- |
+| Java 25 | Linguagem principal | ✅ |
+| Spring Boot 3.5.16 | Framework | ✅ |
+| Spring Batch 5.x | Processamento em lote | ✅ |
+| Java NIO `WatchService` | Monitoramento do filesystem | ✅ |
+| PostgreSQL | Persistência | ✅ |
+| JDBC Batch | Escrita otimizada | ✅ |
+| Flyway | Versionamento do schema | ✅ |
+| Maven | Build e dependências | ✅ |
+| JUnit / Testcontainers | Testes automatizados e de integração | ✅ |
+| Spring Boot Actuator | Dependência presente | ✅ |
+| Spring WebFlux | API reativa planejada | 🔜 |
+| SSE | Eventos em tempo real | 🔜 |
+| RabbitMQ | Mensageria/distribuição | 🔜 |
+| Micrometer / Prometheus / Grafana | Métricas e monitoramento | 🔜 |
+| Docker Compose | Distribuição da aplicação | 🔜 |
+| OpenAPI / Swagger | Documentação de API | 🔜 |
+
+O projeto também possui dependências de Spring Web e Spring Data JPA,
+mas o Writer de ingestão utiliza JDBC Batch.
 
 ------------------------------------------------------------------------
 
 ## 🏗️ Arquitetura atual
 
-``` text
+```text
 CSV
  │
  ▼
@@ -110,9 +118,8 @@ Java NIO WatchService
  ▼
 FileEventHandler
  │
- ├── validação de formato
+ ├── validação de formato e cabeçalho
  ├── estabilidade + retry
- ├── validação de cabeçalho
  └── SHA-256
         │
         ▼
@@ -124,7 +131,17 @@ duplicado    novo
 /rejeitados  /processamento
    │          │
    ▼          ▼
-auditoria   file_processing
+auditoria   LeitorMetadadosArquivoCsv
+              │
+              ▼
+        CargaLogicaService
+         /           \
+    ORIGINAL      COMPLEMENTAR
+       │               │
+   cria carga      valida carga
+       └──────┬────────┘
+              ▼
+       file_processing
               │
               ▼
           Spring Batch
@@ -132,12 +149,18 @@ auditoria   file_processing
               │
               ▼
           PostgreSQL
-          /        \
-      sucesso      falha
-         │           │
-         ▼           ▼
- /processados      /erro
+       customer + logical_load
+              │
+         /          \
+      sucesso       falha
+         │            │
+         ▼            ▼
+ /processados       /erro
 ```
+
+A carga lógica agrupa registros provenientes de um ou mais arquivos
+físicos. A conclusão de cada arquivo não implica, por si só, a conclusão
+da carga lógica.
 
 ------------------------------------------------------------------------
 
@@ -163,18 +186,18 @@ Configuração atual:
 ``` yaml
 fileprocessor:
   directory:
-    input-directory: ./files/entrada
-    processing-directory: ./files/processamento
-    processed-directory: ./files/processados
-    error-directory: ./files/erro
-    rejected-directory: ./files/rejeitados
+    diretorio-entrada: ./files/entrada
+    diretorio-processamento: ./files/processamento
+    diretorio-processados: ./files/processados
+    diretorio-erro: ./files/erro
+    diretorio-rejeitados: ./files/rejeitados
 
   stability:
-    stable-checks: 3
-    max-attempts: 10
-    check-interval-ms: 1000
-    max-retries: 3
-    retry-interval-ms: 5000
+    verificacoes-estabilidade: 3
+    maximo-tentativas: 10
+    intervalo-verificacao-ms: 1000
+    maximo-retentativas: 3
+    intervalo-retentativa-ms: 5000
 
   recovery:
     abandoned-after-minutes: 30
@@ -184,53 +207,125 @@ fileprocessor:
 
 ## 🔄 Fluxo atual
 
-``` text
+```text
 1. WatchService detecta ENTRY_CREATE
         ↓
 2. FileEventHandler recebe o Path
         ↓
-3. Validação do formato
+3. Validação de formato e estabilidade + retry
         ↓
-4. Verificação de estabilidade + retry
+4. SHA-256 do arquivo completo
         ↓
-5. Validação do cabeçalho
-        ↓
-6. SHA-256 do arquivo completo
-        ↓
-7. Verificação de idempotência
+5. Verificação de idempotência
    ├── duplicado → /rejeitados + auditoria
    └── novo
         ↓
-8. Movimentação para /processamento
+6. Movimentação para /processamento
         ↓
-9. Reserva do processamento no PostgreSQL
+7. Leitura e validação de metadados CSV
         ↓
-10. Spring Batch
+8. Preparação da carga lógica
+   ├── ORIGINAL → cria carga INCOMPLETA
+   └── COMPLEMENTAR → exige carga INCOMPLETA existente
         ↓
-11. Reader → Processor → Writer
+9. Registro em file_processing
         ↓
-12. Persistência por chunks
-   ├── COMPLETED → /processados
-   └── FAILED    → /erro
+10. Spring Batch: Reader → Processor → Writer
         ↓
-13. Persistência do final_file_path
+11. Persistência por chunks com vínculos de origem
+        ↓
+12. Resultado do arquivo
+   ├── COMPLETO / COMPLETO_COM_FALHAS → /processados
+   └── FALHOU → /erro
+        ↓
+13. Atualização dos contadores e final_file_path
 ```
 
-A restrição `UNIQUE` sobre o hash é a barreira definitiva contra uma
-condição de corrida entre verificações concorrentes.
+A restrição `UNIQUE` sobre o hash protege a identidade física do
+arquivo. A unicidade de `(logical_load_id, record_identifier)` protege
+a identidade de cada registro dentro da carga lógica.
 
 ------------------------------------------------------------------------
 
 ## 📄 Formato do CSV
 
-``` text
-Nome|CPF|Agência|Conta|Valor|Mês de Referência
-João da Silva|12345678901|1234|123456-7|9995.88|09/26
-Maria Souza|98765432100|5678|987654-3|1250.50|09/26
+O CSV utiliza UTF-8, separador `|`, três linhas de metadados e um
+cabeçalho obrigatório antes dos registros.
+
+```text
+idCarga|CAIXA-20261112-000001
+tipoArquivo|ORIGINAL
+totalRegistros|3
+id_registro|nome|cpf|agencia|conta|valor|mes_referencia
+REG-000001|Cliente 1|52998224725|0001|000001|100.00|10/26
+REG-000002|Cliente 2|52998224725|0001|000002|150.00|10/26
+REG-000003|Cliente 3|52998224725|0001|000003|200.00|10/26
 ```
 
-O Reader ignora o cabeçalho. O Processor valida e converte campos como
-nome, CPF, agência, conta, valor e mês de referência.
+Regras verificadas pelo `LeitorMetadadosArquivoCsv`:
+
+- `idCarga`: padrão `CAIXA-AAAAMMDD-NNNNNN`;
+- `tipoArquivo`: `ORIGINAL` ou `COMPLEMENTAR`;
+- `totalRegistros`: inteiro maior que zero;
+- cabeçalho exatamente igual ao exemplo;
+- `id_registro`: formato `REG-` seguido de pelo menos seis dígitos,
+  validado também pela restrição do banco.
+
+`totalRegistros` representa o total esperado da **carga lógica**, e não
+necessariamente a quantidade de linhas de cada arquivo complementar.
+
+O Reader ignora as quatro primeiras linhas (metadados e cabeçalho).
+O Processor valida e converte os dados e associa cada registro ao
+arquivo físico e à carga lógica.
+
+------------------------------------------------------------------------
+
+## 🧷 Cargas lógicas e arquivos complementares
+
+Uma carga lógica identifica um conjunto de registros que pode ser
+entregue em mais de um arquivo físico.
+
+```text
+logical_load (idCarga)
+       │
+       ├── file_processing ORIGINAL
+       │        └── customer REG-000001 ...
+       │
+       └── file_processing COMPLEMENTAR
+                └── customer REG-000002 ...
+```
+
+### Arquivo ORIGINAL
+
+- Deve informar um `idCarga` ainda não utilizado.
+- Cria a carga em `logical_load` com status `INCOMPLETA`.
+- Registra o total esperado de registros.
+- Vincula o processamento físico à carga criada.
+
+### Arquivo COMPLEMENTAR
+
+- Deve informar um `idCarga` já existente.
+- A carga precisa estar em `INCOMPLETA`.
+- O `totalRegistros` deve ser igual ao da carga original.
+- O arquivo possui seu próprio `file_processing`, mas compartilha a
+  mesma `logical_load`.
+
+### Unicidade por carga
+
+A migration V9 introduz os campos `logical_load_id` e
+`record_identifier` em `customer` e cria um índice único para:
+
+```sql
+(logical_load_id, record_identifier)
+```
+
+Assim, o mesmo `id_registro` não pode ser persistido duas vezes na
+mesma carga lógica.
+
+> **Limite atual:** a estrutura de cargas e a proteção por unicidade
+> estão implementadas. A contagem conciliada de registros únicos e a
+> transição automática de `INCOMPLETA` para `CONCLUIDA` ainda não foram
+> implementadas no fluxo consultado.
 
 ------------------------------------------------------------------------
 
@@ -304,21 +399,23 @@ concorrentes tentam reservar o mesmo hash.
 
 ## ⚙️ Spring Batch
 
-``` text
+```text
 FlatFileItemReader
         ↓
-CustomerItemProcessor
+ClienteItemProcessor
         ↓
 JdbcBatchItemWriter
         ↓
 PostgreSQL
 ```
 
-O Reader lê progressivamente; o Processor valida e transforma; o Writer
-executa inserts em lote.
+O Reader lê progressivamente os registros após as quatro linhas
+iniciais. O Processor valida e transforma os dados, preenchendo
+`file_processing_id`, `logical_load_id` e `record_identifier`.
+O Writer executa inserts em lote na tabela `customer`.
 
-Registros inválidos podem lançar `InvalidRecordException` e ser tratados
-pela configuração fault tolerant do Step.
+Registros inválidos podem ser ignorados pela configuração fault
+tolerant do Step e auditados para posterior análise.
 
 ------------------------------------------------------------------------
 
@@ -342,71 +439,108 @@ será definido por benchmark, não por suposição.
 
 A estratégia adotada é **processamento parcial controlado**.
 
-``` text
+```text
 chunk 1 → COMMIT
 chunk 2 → COMMIT
 chunk 3 → COMMIT
-chunk 4 → falha
+chunk 4 → falha / ROLLBACK
 ```
 
-Os chunks anteriores podem permanecer persistidos. O projeto não
-pretende substituir isso por uma única transação gigantesca para o
-arquivo inteiro.
+Os chunks anteriores permanecem persistidos. O projeto não pretende
+substituir isso por uma única transação para o arquivo inteiro.
 
-A próxima evolução é:
+A rastreabilidade de origem já está implementada:
 
-``` text
+```text
+logical_load
+    │ 1:N
+    ▼
 file_processing
-       │ 1
-       │
-       │ N
-       ▼
-    customer
+    │ 1:N
+    ▼
+  customer
 ```
 
-com `customer.file_processing_id`.
+Cada cliente registra seu processamento de origem e sua carga lógica.
 
-Isso permitirá rastrear a origem dos dados e sustentar futuras políticas
-de restart, limpeza, retry e reprocessamento.
+### Restart de processamento com falha
 
-> **Status:** decisão arquitetural definida; associação
-> `customer -> file_processing` ainda não implementada.
+O `JobService.reiniciar(idProcessamentoArquivo)` aceita processamentos
+com status `FALHOU` e caminho de arquivo recuperável.
+
+O serviço recupera o `logical_load_id` associado, move o arquivo de
+volta para `/processamento` e reinicia o job com os identificadores
+originais. O Spring Batch utiliza seu estado persistido para retomar
+o processamento, preservando os chunks já confirmados.
+
+Testes de integração verificam falhas controladas, persistência parcial,
+retomada e contadores finais.
 
 ------------------------------------------------------------------------
 
 ## 🚨 Tolerância a falhas por registro
 
-``` text
+```text
 Reader
   ↓
 Processor
   ├── válido ─────────► Writer
   └── inválido
          ↓
-InvalidRecordException
+      exceção
          ↓
-       skip
+        skip
+         ↓
+ auditoria do registro
 ```
 
-Enquanto o limite de skips não for ultrapassado, o processamento pode
-continuar. Ao excedê-lo, Step/Job falham e o arquivo segue para `/erro`.
+Enquanto o limite configurado de skips não for ultrapassado, o job
+pode continuar. Se o limite for excedido, o processamento falha e
+o arquivo segue para `/erro`.
+
+Ao concluir com registros ignorados, o arquivo recebe status
+`COMPLETO_COM_FALHAS`. A auditoria permite localizar as linhas
+problemáticas, inclusive após restart.
 
 ------------------------------------------------------------------------
 
 ## 💾 PostgreSQL
 
+### `logical_load`
+
+Agrupa os arquivos de uma mesma carga de negócio.
+
+```text
+id
+load_identifier
+expected_records
+status
+created_at
+completed_at
+```
+
+Estados previstos no schema:
+
+```text
+INCOMPLETA
+CONCLUIDA
+```
+
+A carga é criada como `INCOMPLETA`. A atualização automática para
+`CONCLUIDA` ainda é uma evolução pendente.
+
 ### `file_processing`
 
-Controla identidade e estado do processamento.
+Controla identidade, estado e rastreabilidade do arquivo físico.
 
-Principais informações:
-
-``` text
+```text
 id
 file_name
 file_path
 final_file_path
 file_hash
+logical_load_id
+file_type
 status
 read_count
 write_count
@@ -416,24 +550,48 @@ finished_at
 error_message
 ```
 
-Estados atualmente relevantes:
+Estados de domínio relevantes:
 
-``` text
-PROCESSING
-COMPLETED
-FAILED
-ABANDONED
+```text
+EM_PROCESSAMENTO
+COMPLETO
+COMPLETO_COM_FALHAS
+FALHOU
+ABANDONADO
 ```
 
-`REJECTED` existe no enum, mas rejeições de ingestão são atualmente
-auditadas em `file_rejection`.
+O tipo de arquivo é `ORIGINAL` ou `COMPLEMENTAR`.
+
+### `customer`
+
+Armazena os registros válidos, incluindo a origem física e lógica.
+
+```text
+file_processing_id
+logical_load_id
+record_identifier
+name
+cpf
+agency
+account
+value
+reference_month
+```
+
+O índice único `(logical_load_id, record_identifier)` impede
+identificadores repetidos dentro da mesma carga.
+
+### `file_processing_error`
+
+Mantém a auditoria dos registros ignorados, incluindo informações
+necessárias para localizar o erro no arquivo.
 
 ### `file_rejection`
 
 Registra rejeições e recuperações que não representam uma execução
 normal do Batch.
 
-``` text
+```text
 file_name
 file_path
 file_hash
@@ -444,7 +602,7 @@ rejected_at
 
 Motivos incluem:
 
-``` text
+```text
 INVALID_FORMAT
 INVALID_HEADER
 UNSTABLE_FILE
@@ -459,7 +617,7 @@ ORPHAN_DUPLICATE
 
 O schema é versionado com **Flyway**.
 
-``` text
+```text
 código da aplicação
         +
 migrations versionadas
@@ -467,17 +625,25 @@ migrations versionadas
 schema reproduzível
 ```
 
-Migrations já foram utilizadas para criar/evoluir estruturas como
-`file_processing`, `file_rejection` e `final_file_path`.
+Além das estruturas de processamento, rejeição e auditoria, as
+migrações recentes introduzem:
 
-Isso evita depender de alterações manuais no banco e mantém a evolução
-do schema associada ao histórico do repositório.
+- **V8:** tabela `logical_load`, vínculo de `file_processing` com a
+  carga lógica e tipo de arquivo;
+- **V9:** `customer.logical_load_id`, `record_identifier`, restrições
+  de formato e unicidade por carga.
+
+As migrations ficam em `src/main/resources/db/migration/`.
+
+A configuração atual também possui `spring.jpa.hibernate.ddl-auto:
+update`. Como o Flyway é o mecanismo escolhido para versionar o schema,
+essa configuração merece revisão antes de um ambiente de produção.
 
 ------------------------------------------------------------------------
 
 ## 🚚 Movimentação e colisão de nomes
 
-O `FileMovementService` centraliza movimentações com Java NIO
+O `MovimentacaoArquivoService` centraliza movimentações com Java NIO
 `Files.move(...)`.
 
 O File Pulse não sobrescreve silenciosamente um arquivo já existente. Em
@@ -765,80 +931,115 @@ Nenhum tamanho será declarado ideal antes de medições reais.
 
 ------------------------------------------------------------------------
 
+## ▶️ Execução local e testes
+
+Pré-requisitos: JDK 25, Maven, PostgreSQL e Docker para os testes
+de integração com Testcontainers.
+
+O `application.yaml` aponta para o banco
+`jdbc:postgresql://localhost:5432/filepulse` e lê as credenciais das
+variáveis de ambiente:
+
+```bash
+export POSTGRES_USERNAME="seu_usuario"
+export POSTGRES_PASSWORD="sua_senha"
+```
+
+Para validar e executar:
+
+```bash
+mvn clean verify
+mvn spring-boot:run
+```
+
+Para executar individualmente os cenários de restart:
+
+```bash
+mvn -Dtest=FileProcessingRestartIntegrationTest test
+mvn -Dtest=RegistroIgnoradoRestartIntegrationTest test
+```
+
+Os jobs não são disparados automaticamente no startup
+(`spring.batch.job.enabled: false`); a ingestão é iniciada pelo
+fluxo da aplicação.
+
+------------------------------------------------------------------------
+
 ## 🗺️ Roadmap
 
 ### Core de ingestão e Batch
 
--   [x] WatchService
--   [x] Validação de formato e cabeçalho
--   [x] Estabilidade e retry
--   [x] Movimentação entre diretórios
--   [x] Colisão de nomes
--   [x] Spring Batch Job/Step
--   [x] FlatFileItemReader
--   [x] ItemProcessor
--   [x] JdbcBatchItemWriter
--   [x] PostgreSQL
--   [x] Chunk processing
--   [x] Skip de registros inválidos
+- [x] WatchService
+- [x] Validação de formato, cabeçalho e metadados
+- [x] Estabilidade e retry
+- [x] Movimentação entre diretórios
+- [x] Colisão de nomes
+- [x] Spring Batch Job/Step
+- [x] FlatFileItemReader
+- [x] ItemProcessor
+- [x] JdbcBatchItemWriter
+- [x] PostgreSQL
+- [x] Chunk processing
+- [x] Skip de registros inválidos
 
 ### Banco e confiabilidade
 
--   [x] Flyway
--   [x] `file_processing`
--   [x] SHA-256
--   [x] Idempotência por conteúdo
--   [x] `UNIQUE` contra concorrência
--   [x] Duplicidade concorrente
--   [x] `file_rejection`
--   [x] `/rejeitados`
--   [x] `final_file_path`
--   [x] Recuperação de PROCESSING abandonado
--   [x] ABANDONED
--   [x] Detecção/auditoria de órfãos
--   [x] Reconciliação de finalizados presos em `/processamento`
--   [ ] Associar `customer` a `file_processing`
--   [ ] Completar processamento parcial controlado
--   [ ] Definir política segura de restart/reprocessamento
+- [x] Flyway
+- [x] `file_processing`
+- [x] SHA-256 e idempotência por conteúdo
+- [x] `UNIQUE` contra concorrência
+- [x] `file_rejection` e `/rejeitados`
+- [x] `final_file_path`
+- [x] Recuperação de processamento abandonado
+- [x] Detecção e auditoria de órfãos
+- [x] Reconciliação no startup
+- [x] Rastreabilidade `customer -> file_processing`
+- [x] Restart com preservação de chunks confirmados
+- [x] `logical_load` e tipos ORIGINAL / COMPLEMENTAR
+- [x] Unicidade de `id_registro` por carga
+- [ ] Conclusão automática da carga lógica
+- [ ] Política completa de duplicidades entre complementares
+- [ ] Testes ponta a ponta da conciliação de cargas
 
 ### Testes e performance
 
--   [ ] Ampliar testes unitários
--   [ ] Testes de integração
--   [ ] Testcontainers
--   [ ] Massa de milhões de registros
--   [ ] Benchmark de chunks
--   [ ] Métricas de throughput/recursos
+- [x] Testes unitários
+- [x] Testes de integração
+- [x] Testcontainers com PostgreSQL
+- [x] Testes de rollback e restart
+- [ ] Massa de milhões de registros
+- [ ] Benchmark de chunks
+- [ ] Métricas de throughput/recursos
 
 ### API e reatividade
 
--   [ ] API REST
--   [ ] Spring WebFlux
--   [ ] SSE
--   [ ] Eventos de progresso
--   [ ] Dashboard
+- [ ] API REST de acompanhamento
+- [ ] Spring WebFlux
+- [ ] SSE
+- [ ] Eventos de progresso
+- [ ] Dashboard
 
 ### Observabilidade
 
--   [ ] Actuator
--   [ ] Micrometer
--   [ ] Prometheus
--   [ ] Grafana
+- [x] Dependência do Actuator
+- [ ] Métricas operacionais com Micrometer
+- [ ] Prometheus
+- [ ] Grafana
 
 ### Infraestrutura/documentação
 
--   [ ] Docker
--   [ ] Docker Compose
--   [ ] OpenAPI / Swagger
+- [ ] Docker / Docker Compose para execução da aplicação
+- [ ] OpenAPI / Swagger
+- [ ] Revisar `ddl-auto` para uso consistente do Flyway
 
 ### Arquitetura distribuída
 
--   [ ] RabbitMQ
--   [ ] Evento de chegada
--   [ ] Workers
--   [ ] Múltiplos consumidores
--   [ ] Processamento distribuído
--   [ ] Testes de concorrência/escalabilidade
+- [ ] RabbitMQ
+- [ ] Evento de chegada
+- [ ] Workers
+- [ ] Múltiplos consumidores
+- [ ] Processamento distribuído
+- [ ] Testes de concorrência/escalabilidade
 
 ------------------------------------------------------------------------
 
@@ -846,7 +1047,7 @@ Nenhum tamanho será declarado ideal antes de medições reais.
 
 ### Implementados
 
-``` text
+```text
 Java NIO
 WatchService
 Files.move
@@ -867,15 +1068,20 @@ Rastreabilidade
 Recovery
 Reconciliação de estado
 Processamento parcial controlado
+Restart com estado persistido
+Carga lógica ORIGINAL / COMPLEMENTAR
+Unicidade de registros por carga
+JUnit / Testcontainers
 ```
 
 ### Planejados
 
-``` text
+```text
+Conclusão automática da carga lógica
+Conciliação de arquivos complementares
 WebFlux
 SSE
-Observabilidade
-Testcontainers
+Métricas operacionais
 RabbitMQ
 Processamento distribuído
 ```
@@ -909,20 +1115,31 @@ serão definidos por medições.
 
 ## 🔮 Próxima evolução
 
-A próxima etapa é tornar explícita a origem de cada registro:
+A próxima etapa é concluir a **conciliação de cargas lógicas**.
 
-``` text
-file_processing
-       │
-       │ 1:N
-       ▼
-    customer
+```text
+logical_load (INCOMPLETA)
+          │
+          ├── ORIGINAL
+          └── COMPLEMENTAR
+                   │
+                   ▼
+        registros únicos gravados
+                   │
+                   ▼
+       comparar com expected_records
+                   │
+          /----------------\
+      pendentes          completo
+         │                  │
+         ▼                  ▼
+    INCOMPLETA           CONCLUIDA
 ```
 
-O objetivo é adicionar `file_processing_id` aos registros processados.
-Essa alteração será a base para evoluir o processamento parcial
-controlado e discutir com segurança restart, retry, reprocessamento,
-limpeza de dados parciais e auditoria por arquivo.
+O objetivo é atualizar o status da carga somente quando a quantidade
+de registros **únicos efetivamente persistidos** atingir o total
+esperado. Antes disso, será necessário definir e testar o tratamento
+de duplicidades e os cenários de falha entre arquivos.
 
 ------------------------------------------------------------------------
 
