@@ -15,10 +15,13 @@ import br.com.jards.filepulse.batch.processor.validations.ValidacaoProcessamento
 @StepScope
 public class ClienteItemProcessor implements ItemProcessor<RegistroClienteCsv, Cliente> {
 
-    private final Long id;
+    private final Long idProcessamentoArquivo;
+    private final Long idCargaLogica;
 
-    public ClienteItemProcessor(@Value("#{jobParameters['fileProcessingId']}") Long fileProcessingId) {
-        this.id = fileProcessingId;
+    public ClienteItemProcessor(@Value("#{jobParameters['fileProcessingId']}") Long idProcessamentoArquivo,
+            @Value("#{jobParameters['logicalLoadId']}") Long idCargaLogica) {
+        this.idProcessamentoArquivo = idProcessamentoArquivo;
+        this.idCargaLogica = idCargaLogica;
     }
 
     @Override
@@ -30,7 +33,9 @@ public class ClienteItemProcessor implements ItemProcessor<RegistroClienteCsv, C
         validacao.validarMesReferencia(registro.mesReferencia());
 
         return new Cliente(
-                id,
+                idProcessamentoArquivo,
+                idCargaLogica,
+                registro.idRegistro(),
                 registro.nome(),
                 validacao.processarCpf(registro.cpf()),
                 registro.agencia(),

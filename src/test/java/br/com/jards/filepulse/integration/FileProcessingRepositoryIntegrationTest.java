@@ -2,6 +2,8 @@ package br.com.jards.filepulse.integration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.util.UUID;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -15,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
+import br.com.jards.filepulse.batch.enums.TipoArquivoCsv;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 
 @SpringBootTest
@@ -200,10 +203,14 @@ class FileProcessingRepositoryIntegrationTest {
     @EnumSource(value = StatusProcessamentoArquivo.class, names = { "COMPLETO", "FALHOU", "ABANDONADO" })
     void deveAtualizarCaminhoFinalPreservandoStatus(StatusProcessamentoArquivo status) {
 
+        Long idCargaLogica = criarCargaLogicaTeste("CAIXA-20261112-000001");
+
         Long id = fileProcessingRepository.criar(
                 "clientes-reconciliacao.csv",
                 "/processamento/clientes-reconciliacao.csv",
-                java.util.UUID.randomUUID().toString());
+                UUID.randomUUID().toString(),
+                idCargaLogica,
+                TipoArquivoCsv.ORIGINAL);
 
         jdbcTemplate.update("""
                 UPDATE file_processing
@@ -228,10 +235,14 @@ class FileProcessingRepositoryIntegrationTest {
     @Test
     void naoDeveAtualizarCaminhoQuandoStatusForDiferente() {
 
+        Long idCargaLogica = criarCargaLogicaTeste("CAIXA-20261112-000002");
+
         Long id = fileProcessingRepository.criar(
                 "clientes-status-divergente.csv",
                 "/processamento/clientes-status-divergente.csv",
-                java.util.UUID.randomUUID().toString());
+                java.util.UUID.randomUUID().toString(),
+                idCargaLogica,
+                TipoArquivoCsv.ORIGINAL);
 
         boolean atualizado = fileProcessingRepository
                 .atualizarCaminhoFinalArquivo(
@@ -249,4 +260,21 @@ class FileProcessingRepositoryIntegrationTest {
         assertNull(processamento.caminhoFinalArquivo());
     }
 
+    private Long criarCargaLogicaTeste(String identificadorCarga) {
+
+        return jdbcTemplate.queryForObject(
+                """
+                        INSERT INTO logical_load (
+                            load_identifier,
+                            expected_records,
+                            status
+                        )
+                        VALUES (?, ?, ?)
+                        RETURNING id
+                        """,
+                Long.class,
+                identificadorCarga,
+                20L,
+                "INCOMPLETA");
+    }
 }

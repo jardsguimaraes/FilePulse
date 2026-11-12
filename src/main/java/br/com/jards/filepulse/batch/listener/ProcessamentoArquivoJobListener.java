@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
+import br.com.jards.filepulse.batch.repository.ProcessamentoErroRepository;
 import br.com.jards.filepulse.batch.service.MovimentacaoArquivoService;
 import lombok.extern.log4j.Log4j2;
 
@@ -20,12 +21,15 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
         private final ProcessamentoArquivoRepository processamentoArquivoRepository;
         private final MovimentacaoArquivoService movimentacaoArquivoService;
         private final JobExplorer jobExplorer;
+        private final ProcessamentoErroRepository processamentoErroRepository;
 
         public ProcessamentoArquivoJobListener(ProcessamentoArquivoRepository processamentoArquivoRepository,
-                        MovimentacaoArquivoService movimentacaoArquivoService, JobExplorer jobExplorer) {
+                        MovimentacaoArquivoService movimentacaoArquivoService, JobExplorer jobExplorer,
+                        ProcessamentoErroRepository processamentoErroRepository) {
                 this.processamentoArquivoRepository = processamentoArquivoRepository;
                 this.movimentacaoArquivoService = movimentacaoArquivoService;
                 this.jobExplorer = jobExplorer;
+                this.processamentoErroRepository = processamentoErroRepository;
         }
 
         @Override
@@ -64,9 +68,7 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
                                 .mapToLong(step -> step.getWriteCount())
                                 .sum();
 
-                var quantidadeIgnorada = etapas.stream()
-                                .mapToLong(step -> step.getSkipCount())
-                                .sum();
+                var quantidadeIgnorada = processamentoErroRepository.contarPorProcessamento(id);
 
                 StatusProcessamentoArquivo status;
 

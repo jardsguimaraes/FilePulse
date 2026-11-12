@@ -15,6 +15,7 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
+import br.com.jards.filepulse.batch.enums.TipoArquivoCsv;
 import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
 
 @Repository
@@ -26,21 +27,34 @@ public class ProcessamentoArquivoRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public Long criar(String nomeArquivo, String caminhoArquivo, String hashArquivo) {
+    public Long criar(String nomeArquivo, String caminhoArquivo, String hashArquivo, Long idCargaLogica,
+            TipoArquivoCsv tipoArquivo) {
         String sql = """
-                    INSERT INTO file_processing (file_name, file_path, file_hash, status)
-                VALUES (?, ?, ?, ?)
+                    INSERT INTO file_processing (
+                        file_name,
+                        file_path,
+                        file_hash,
+                        status,
+                        logical_load_id,
+                        file_type)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """;
 
+        Objects.requireNonNull(idCargaLogica, "O ID da carga lógica é obrigatório");
+        Objects.requireNonNull(tipoArquivo, "O tipo do arquivo é obrigatório");
         KeyHolder chaveGerada = new GeneratedKeyHolder();
 
         jdbcTemplate.update(conexao -> {
-            PreparedStatement declaracao = conexao.prepareStatement(sql, new String[] { "id" });
+            PreparedStatement declaracao = conexao.prepareStatement(
+                    sql,
+                    new String[] { "id" });
 
             declaracao.setString(1, nomeArquivo);
             declaracao.setString(2, caminhoArquivo);
             declaracao.setString(3, hashArquivo);
             declaracao.setString(4, StatusProcessamentoArquivo.PROCESSANDO.name());
+            declaracao.setLong(5, idCargaLogica);
+            declaracao.setString(6, tipoArquivo.name());
 
             return declaracao;
         }, chaveGerada);
@@ -265,6 +279,17 @@ public class ProcessamentoArquivoRepository {
         Long total = jdbcTemplate.queryForObject(sql, Long.class);
 
         return Objects.requireNonNull(total, "A consulta de contagem não retornou um valor");
+    }
+
+    public Long buscarIdCargaLogica(Long idProcessamentoArquivo) {
+        return jdbcTemplate.queryForObject(
+                """
+                            SELECT logical_load_id
+                            FROM file_processing
+                            WHERE id = ?
+                        """,
+                Long.class,
+                idProcessamentoArquivo);
     }
 
 }

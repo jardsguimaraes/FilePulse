@@ -58,4 +58,17 @@ public class ProcessamentoErroRepository {
 
         return jdbcTemplate.queryForList(sql, idProcessamentoArquivo);
     }
+
+    public long contarPorProcessamento(Long idProcessamentoArquivo) {
+        Long quantidade = jdbcTemplate.queryForObject(
+                """
+                            SELECT COUNT(*)
+                            FROM file_processing_error
+                            WHERE file_processing_id = ?
+                        """,
+                Long.class,
+                idProcessamentoArquivo);
+
+                return  quantidade != null ? quantidade : 0L;
+    }
 }

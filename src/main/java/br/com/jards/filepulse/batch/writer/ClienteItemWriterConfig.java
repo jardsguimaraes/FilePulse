@@ -17,10 +17,27 @@ public class ClienteItemWriterConfig {
         return new JdbcBatchItemWriterBuilder<Cliente>()
                 .dataSource(dataSource)
                 .sql(
-                        """
-                                    INSERT INTO customer (file_processing_id, name, cpf, agency, account, value, reference_month)
-                                        VALUES (:id, :nome, :cpf, :agencia, :conta, :valor, :mesReferencia)
-                                """)
+                    """
+                        INSERT INTO customer (
+                            file_processing_id,
+                            logical_load_id,
+                            record_identifier,
+                            name,
+                            cpf,
+                            agency, account,
+                            value,
+                            reference_month)
+                        VALUES (
+                            :idProcessamentoArquivo,
+                            :idCargaLogica,
+                            :idRegistro,
+                            :nome,
+                            :cpf,
+                            :agencia,
+                            :conta,
+                            :valor,
+                            :mesReferencia)
+                    """)
                 .beanMapped()
                 .build();
     }

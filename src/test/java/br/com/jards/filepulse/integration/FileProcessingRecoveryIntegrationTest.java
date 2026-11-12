@@ -1,3 +1,4 @@
+
 package br.com.jards.filepulse.integration;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,6 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
+import br.com.jards.filepulse.batch.enums.TipoArquivoCsv;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import br.com.jards.filepulse.batch.service.RecuperacaoProcessamentoArquivoService;
 import br.com.jards.filepulse.watcher.config.ArmazenamentoArquivoProperties;
@@ -65,26 +67,35 @@ class FileProcessingRecoveryIntegrationTest {
                 Path arquivo = diretorioProcessamento.resolve(
                                 "teste-reconciliacao-" + UUID.randomUUID() + ".csv");
 
-                Files.writeString(arquivo, "conteudo de teste");
-
-                Long id = repository.criar(
-                                arquivo.getFileName().toString(),
-                                arquivo.toString(),
-                                UUID.randomUUID().toString());
-
-                jdbcTemplate.update("""
-                                UPDATE file_processing
-                                SET status = ?,
-                                        finished_at = CURRENT_TIMESTAMP
-                                WHERE id = ?
-                                """, status.name(), id);
-
                 Path arquivoFinal = null;
+                Long idCargaLogica = null;
+                Long idProcessamentoArquivo = null;
 
                 try {
+                        Files.writeString(arquivo, "conteudo de teste");
+
+                        idCargaLogica = criarCargaLogicaTeste(status);
+
+                        idProcessamentoArquivo = repository.criar(
+                                        arquivo.getFileName().toString(),
+                                        arquivo.toString(),
+                                        UUID.randomUUID().toString(),
+                                        idCargaLogica,
+                                        TipoArquivoCsv.ORIGINAL);
+
+                        jdbcTemplate.update("""
+                                        UPDATE file_processing
+                                        SET status = ?,
+                                                finished_at = CURRENT_TIMESTAMP
+                                        WHERE id = ?
+                                        """,
+                                        status.name(),
+                                        idProcessamentoArquivo);
+
                         recoveryService.recuperar();
 
-                        var processamento = repository.buscarPorId(id)
+                        var processamento = repository
+                                        .buscarPorId(idProcessamentoArquivo)
                                         .orElseThrow();
 
                         assertEquals(status, processamento.status());
@@ -105,14 +116,62 @@ class FileProcessingRecoveryIntegrationTest {
                                         arquivoFinal.getParent().toAbsolutePath().normalize());
 
                 } finally {
-                        Files.deleteIfExists(arquivo);
-
-                        if (arquivoFinal != null) {
-                                Files.deleteIfExists(arquivoFinal);
+                        try {
+                                try {
+                                        Files.deleteIfExists(arquivo);
+                                } finally {
+                                        if (arquivoFinal != null) {
+                                                Files.deleteIfExists(arquivoFinal);
+                                        }
+                                }
+                        } finally {
+                                try {
+                                        if (idProcessamentoArquivo != null) {
+                                                jdbcTemplate.update(
+                                                                """
+                                                                                DELETE FROM file_processing
+                                                                                WHERE id = ?
+                                                                                """,
+                                                                idProcessamentoArquivo);
+                                        }
+                                } finally {
+                                        if (idCargaLogica != null) {
+                                                jdbcTemplate.update(
+                                                                """
+                                                                                DELETE FROM logical_load
+                                                                                WHERE id = ?
+                                                                                """,
+                                                                idCargaLogica);
+                                        }
+                                }
                         }
-
-                        jdbcTemplate.update(
-                                        "DELETE FROM file_processing WHERE id = ?", id);
                 }
+        }
+
+        private Long criarCargaLogicaTeste(
+                        StatusProcessamentoArquivo status) {
+
+                String identificadorCarga = switch (status) {
+                        case COMPLETO -> "CAIXA-20261112-000101";
+                        case FALHOU -> "CAIXA-20261112-000102";
+                        case ABANDONADO -> "CAIXA-20261112-000103";
+                        default -> throw new IllegalArgumentException(
+                                        "Status não previsto no teste: " + status);
+                };
+
+                return jdbcTemplate.queryForObject(
+                                """
+                                                INSERT INTO logical_load (
+                                                        load_identifier,
+                                                        expected_records,
+                                                        status
+                                                )
+                                                VALUES (?, ?, ?)
+                                                RETURNING id
+                                                """,
+                                Long.class,
+                                identificadorCarga,
+                                20L,
+                                "INCOMPLETA");
         }
 }

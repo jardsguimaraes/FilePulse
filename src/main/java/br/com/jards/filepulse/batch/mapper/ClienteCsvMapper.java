@@ -11,6 +11,7 @@ public class ClienteCsvMapper implements FieldSetMapper<RegistroClienteCsv> {
     @Override
     public RegistroClienteCsv mapFieldSet(FieldSet campos) throws BindException {
         return new RegistroClienteCsv(
+            campos.readString("idRegistro"),
                 campos.readString("name"),
                 campos.readRawString("cpf"),
                 campos.readString("agency"),

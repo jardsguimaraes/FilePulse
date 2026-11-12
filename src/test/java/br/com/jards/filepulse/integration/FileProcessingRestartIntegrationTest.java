@@ -183,10 +183,17 @@ public class FileProcessingRestartIntegrationTest {
         var file = processingDirectory.resolve("clientes-restart.csv");
 
         var content = new StringBuilder();
-        content.append("Nome|CPF|Agência|Conta|Valor|Mês de Referência\n");
+
+        content.append("idCarga|CAIXA-20261112-000002\n");
+        content.append("tipoArquivo|ORIGINAL\n");
+        content.append("totalRegistros|40\n");
+        content.append(
+                "id_registro|nome|cpf|agencia|conta|valor|mes_referencia\n");
 
         for (int i = 1; i <= 40; i++) {
-            content.append("Cliente %d|52998224725|0001|%06d|100.00|10/26%n".formatted(i, i));
+            content.append(
+                    "REG-%06d|Cliente %d|52998224725|0001|%06d|100.00|10/26%n"
+                            .formatted(i, i, i));
         }
 
         return Files.writeString(file, content.toString());

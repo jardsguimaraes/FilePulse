@@ -1,5 +1,6 @@
 package br.com.jards.filepulse.batch.service;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 import org.springframework.batch.core.Job;
@@ -16,6 +17,8 @@ import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.exception.InicializacaoJobException;
+import br.com.jards.filepulse.batch.model.MetadadosArquivoCsv;
+import br.com.jards.filepulse.batch.reader.LeitorMetadadosArquivoCsv;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import lombok.extern.log4j.Log4j2;
 
@@ -27,17 +30,41 @@ public class JobService {
     private final Job processamentoArquivoJob;
     private final ProcessamentoArquivoRepository processamentoArquivoRepository;
     private final MovimentacaoArquivoService movimentacaoArquivoService;
+    private final LeitorMetadadosArquivoCsv leitorMetadadosArquivoCsv;
+    private final CargaLogicaService cargaLogicaService;
 
     public JobService(JobLauncher jobLauncher, @Qualifier("processarArquivoJob") Job processamentoArquivoJob,
             ProcessamentoArquivoRepository processamentoArquivoRepository,
-            MovimentacaoArquivoService movimentacaoArquivoService) {
+            MovimentacaoArquivoService movimentacaoArquivoService, CargaLogicaService cargaLogicaService,
+            LeitorMetadadosArquivoCsv leitorMetadadosArquivoCsv) {
         this.jobLauncher = jobLauncher;
         this.processamentoArquivoJob = processamentoArquivoJob;
         this.processamentoArquivoRepository = processamentoArquivoRepository;
         this.movimentacaoArquivoService = movimentacaoArquivoService;
+        this.leitorMetadadosArquivoCsv = leitorMetadadosArquivoCsv;
+        this.cargaLogicaService = cargaLogicaService;
     }
 
     public boolean iniciar(Path arquivo, String hashArquivo) {
+
+        if (processamentoArquivoRepository.existePorHash(hashArquivo)) {
+            log.warn(
+                    "Processamento não iniciado. Já existe um arquivo registrado com o hash: {}",
+                    hashArquivo);
+            return false;
+        }
+
+        MetadadosArquivoCsv metadados;
+
+        try {
+            metadados = leitorMetadadosArquivoCsv.ler(arquivo);
+        } catch (IOException e) {
+            throw new InicializacaoJobException(
+                    "Não foi possível ler os metadados do arquivo %s".formatted(arquivo),
+                    e);
+        }
+
+        var cargaLogica = cargaLogicaService.prepararCarga(metadados);
 
         Long idProcessamentoArquivo;
 
@@ -45,24 +72,35 @@ public class JobService {
             idProcessamentoArquivo = processamentoArquivoRepository.criar(
                     arquivo.getFileName().toString(),
                     arquivo.toString(),
-                    hashArquivo);
+                    hashArquivo,
+                    cargaLogica.id(),
+                    metadados.tipoArquivo());
 
         } catch (DuplicateKeyException e) {
-            log.warn("Processamento não iniciado. Já existe um arquivo registrado com o hash: {}", hashArquivo);
+            log.warn(
+                    "Processamento não iniciado. Já existe um arquivo registrado com o hash: {}",
+                    hashArquivo);
             return false;
         }
 
-        var parametros = construirParametrosJob(arquivo, idProcessamentoArquivo);
+        var parametros = construirParametrosJob(
+                arquivo,
+                idProcessamentoArquivo,
+                cargaLogica.id());
 
         try {
             jobLauncher.run(processamentoArquivoJob, parametros);
             return true;
+
         } catch (JobExecutionAlreadyRunningException
                 | JobRestartException
                 | JobInstanceAlreadyCompleteException
                 | JobParametersInvalidException e) {
+
             log.error("Erro ao iniciar o Job para o arquivo {}", arquivo, e);
-            throw new InicializacaoJobException("Não foi possível iniciar o Job para o arquivo %s".formatted(arquivo),
+
+            throw new InicializacaoJobException(
+                    "Não foi possível iniciar o Job para o arquivo %s".formatted(arquivo),
                     e);
         }
     }
@@ -88,8 +126,14 @@ public class JobService {
         Path arquivoProcessamento = null;
 
         try {
+            Long idCargaLogica = processamentoArquivoRepository.buscarIdCargaLogica(idProcessamentoArquivo);
+
+            if (idCargaLogica == null) {
+                throw new IllegalArgumentException("Processamento não possui carga lógica associada: %d"
+                        .formatted(idProcessamentoArquivo));
+            }
             arquivoProcessamento = movimentacaoArquivoService.moverParaProcessamento(Path.of(caminhoFinalArquivo));
-            var parametros = construirParametrosJob(arquivoProcessamento, idProcessamentoArquivo);
+            var parametros = construirParametrosJob(arquivoProcessamento, idProcessamentoArquivo, idCargaLogica);
             jobLauncher.run(processamentoArquivoJob, parametros);
         } catch (JobExecutionAlreadyRunningException | JobRestartException
                 | JobInstanceAlreadyCompleteException | JobParametersInvalidException e) {
@@ -103,10 +147,15 @@ public class JobService {
         }
     }
 
-    private JobParameters construirParametrosJob(Path arquivo, Long idProcessamentoArquivo) {
+    private JobParameters construirParametrosJob(
+            Path arquivo,
+            Long idProcessamentoArquivo,
+            Long idCargaLogica) {
+
         return new JobParametersBuilder()
                 .addString("filePath", arquivo.toString(), false)
                 .addLong("fileProcessingId", idProcessamentoArquivo)
+                .addLong("logicalLoadId", idCargaLogica, false)
                 .addLong("timestamp", System.currentTimeMillis(), false)
                 .toJobParameters();
     }
