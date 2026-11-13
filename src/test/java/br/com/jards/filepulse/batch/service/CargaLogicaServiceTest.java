@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import java.nio.file.Path;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -14,139 +15,356 @@ import br.com.jards.filepulse.batch.enums.TipoArquivoCsv;
 import br.com.jards.filepulse.batch.model.CargaLogica;
 import br.com.jards.filepulse.batch.model.MetadadosArquivoCsv;
 import br.com.jards.filepulse.batch.repository.CargaLogicaRepository;
+import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
+import br.com.jards.filepulse.watcher.config.ArmazenamentoArquivoProperties;
 
 class CargaLogicaServiceTest {
 
-    private static final String ID_CARGA = "CAIXA-20261110-000001";
+        private static final String ID_CARGA = "CAIXA-20261110-000001";
 
-    private static final long TOTAL_REGISTROS = 100000L;
+        private static final long TOTAL_REGISTROS = 100000L;
 
-    private CargaLogicaRepository repository;
-    private CargaLogicaService service;
+        private CargaLogicaRepository repository;
+        private ProcessamentoArquivoRepository processamentoArquivoRepository;
+        private ArmazenamentoArquivoProperties armazenamentoArquivoProperties;
+        private CargaLogicaService service;
 
-    @BeforeEach
-    void configurar() {
-        repository = mock(CargaLogicaRepository.class);
-        service = new CargaLogicaService(repository);
-    }
+        @BeforeEach
+        void configurar() {
+                repository = mock(CargaLogicaRepository.class);
 
-    @Test
-    void deveCriarCargaOriginalQuandoNaoExiste() {
+                armazenamentoArquivoProperties = mock(ArmazenamentoArquivoProperties.class);
 
-        var metadados = metadados(TipoArquivoCsv.ORIGINAL);
-        var cargaCriada = carga(StatusCargaLogica.INCOMPLETA);
+                processamentoArquivoRepository = mock(ProcessamentoArquivoRepository.class);
 
-        when(repository.buscarPorIdCarga(ID_CARGA))
-                .thenReturn(Optional.empty());
+                service = new CargaLogicaService(
+                                repository,
+                                armazenamentoArquivoProperties,
+                                processamentoArquivoRepository);
+        }
 
-        when(repository.criar(ID_CARGA, TOTAL_REGISTROS))
-                .thenReturn(cargaCriada);
+        @Test
+        void deveCriarCargaOriginalQuandoNaoExiste() {
 
-        CargaLogica resultado = service.prepararCarga(metadados);
+                var metadados = metadados(TipoArquivoCsv.ORIGINAL);
+                var cargaCriada = carga(StatusCargaLogica.INCOMPLETA);
 
-        assertEquals(cargaCriada, resultado);
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.empty());
 
-        verify(repository).criar(ID_CARGA, TOTAL_REGISTROS);
-    }
+                when(repository.criar(ID_CARGA, TOTAL_REGISTROS))
+                                .thenReturn(cargaCriada);
 
-    @Test
-    void deveRejeitarCargaOriginalDuplicada() {
+                CargaLogica resultado = service.prepararCarga(metadados);
 
-        when(repository.buscarPorIdCarga(ID_CARGA))
-                .thenReturn(Optional.of(
-                        carga(StatusCargaLogica.INCOMPLETA)));
+                assertEquals(cargaCriada, resultado);
 
-        assertThrows(IllegalArgumentException.class, 
-                () -> service.prepararCarga(metadados(TipoArquivoCsv.ORIGINAL)));
+                verify(repository).criar(ID_CARGA, TOTAL_REGISTROS);
+        }
 
-        verify(repository, never()).criar(anyString(), anyLong());
-    }
+        @Test
+        void deveRejeitarCargaOriginalDuplicada() {
 
-    @Test
-    void deveRejeitarComplementarSemCargaOriginal() {
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(
+                                                carga(StatusCargaLogica.INCOMPLETA)));
 
-        when(repository.buscarPorIdCarga(ID_CARGA)).thenReturn(Optional.empty());
+                assertThrows(IllegalArgumentException.class,
+                                () -> service.prepararCarga(metadados(TipoArquivoCsv.ORIGINAL)));
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.prepararCarga(metadados(TipoArquivoCsv.COMPLEMENTAR)));
+                verify(repository, never()).criar(anyString(), anyLong());
+        }
 
-        verify(repository, never()).criar(anyString(), anyLong());
-    }
+        @Test
+        void deveRejeitarComplementarSemCargaOriginal() {
 
-    @Test
-    void deveRejeitarComplementarComCargaConcluida() {
+                when(repository.buscarPorIdCarga(ID_CARGA)).thenReturn(Optional.empty());
 
-        when(repository.buscarPorIdCarga(ID_CARGA))
-                .thenReturn(Optional.of(carga(StatusCargaLogica.CONCLUIDA)));
+                assertThrows(
+                                IllegalArgumentException.class,
+                                () -> service.prepararCarga(metadados(TipoArquivoCsv.COMPLEMENTAR)));
 
-        IllegalArgumentException erro = assertThrows(
-                IllegalArgumentException.class,
-                () -> service.prepararCarga(metadados(TipoArquivoCsv.COMPLEMENTAR)));
+                verify(repository, never()).criar(anyString(), anyLong());
+        }
 
-        assertTrue(erro.getMessage().contains("não está disponível para complementação"));
-    }
+        @Test
+        void deveRejeitarComplementarComCargaConcluida() {
 
-    @Test
-    void deveRejeitarComplementarComTotalDivergente() {
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(carga(StatusCargaLogica.CONCLUIDA)));
 
-        when(repository.buscarPorIdCarga(ID_CARGA))
-                .thenReturn(Optional.of(carga(StatusCargaLogica.INCOMPLETA)));
+                IllegalArgumentException erro = assertThrows(
+                                IllegalArgumentException.class,
+                                () -> service.prepararCarga(metadados(TipoArquivoCsv.COMPLEMENTAR)));
 
-        var metadados = new MetadadosArquivoCsv(
-                ID_CARGA,
-                TipoArquivoCsv.COMPLEMENTAR,
-                90000L);
+                assertTrue(erro.getMessage().contains("não está disponível para complementação"));
+        }
 
-        IllegalArgumentException erro = assertThrows(
-                IllegalArgumentException.class,
-                () -> service.prepararCarga(metadados));
+        @Test
+        void deveRejeitarComplementarComTotalDivergente() {
 
-        assertTrue(erro.getMessage().contains("Total de registros divergente"));
-    }
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(carga(StatusCargaLogica.INCOMPLETA)));
 
-    @Test
-    void deveReutilizarCargaIncompletaParaComplementar() {
+                var metadados = new MetadadosArquivoCsv(
+                                ID_CARGA,
+                                TipoArquivoCsv.COMPLEMENTAR,
+                                90000L);
 
-        var cargaExistente = carga(StatusCargaLogica.INCOMPLETA);
+                IllegalArgumentException erro = assertThrows(
+                                IllegalArgumentException.class,
+                                () -> service.prepararCarga(metadados));
 
-        when(repository.buscarPorIdCarga(ID_CARGA))
-                .thenReturn(Optional.of(cargaExistente));
+                assertTrue(erro.getMessage().contains("Total de registros divergente"));
+        }
 
-        CargaLogica resultado = service.prepararCarga(metadados(TipoArquivoCsv.COMPLEMENTAR));
+        @Test
+        void deveReutilizarCargaIncompletaParaComplementar() {
 
-        assertEquals(cargaExistente, resultado);
+                var cargaExistente = carga(StatusCargaLogica.INCOMPLETA);
 
-        verify(repository, never()).criar(anyString(), anyLong());
-    }
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(cargaExistente));
 
-    @Test
-    void deveRejeitarMetadadosNulos() {
+                CargaLogica resultado = service.prepararCarga(metadados(TipoArquivoCsv.COMPLEMENTAR));
 
-        NullPointerException erro = assertThrows(
-                NullPointerException.class,
-                () -> service.prepararCarga(null));
+                assertEquals(cargaExistente, resultado);
 
-        assertEquals("Os metadados do arquivo são obrigatórios", erro.getMessage());
+                verify(repository, never()).criar(anyString(), anyLong());
+        }
 
-        verifyNoInteractions(repository);
-    }
+        @Test
+        void deveRejeitarMetadadosNulos() {
 
-    private MetadadosArquivoCsv metadados(
-            TipoArquivoCsv tipoArquivo) {
+                NullPointerException erro = assertThrows(
+                                NullPointerException.class,
+                                () -> service.prepararCarga(null));
 
-        return new MetadadosArquivoCsv(
-                ID_CARGA,
-                tipoArquivo,
-                TOTAL_REGISTROS);
-    }
+                assertEquals("Os metadados do arquivo são obrigatórios", erro.getMessage());
 
-    private CargaLogica carga(StatusCargaLogica status) {
+                verifyNoInteractions(repository);
+        }
 
-        return new CargaLogica(
-                10L,
-                ID_CARGA,
-                TOTAL_REGISTROS,
-                status);
-    }
+        @Test
+        void deveBloquearCargaAntesDeReservarComplementar() {
+
+                var metadados = metadados(TipoArquivoCsv.COMPLEMENTAR);
+                var cargaExistente = carga(StatusCargaLogica.INCOMPLETA);
+                var arquivo = Path.of("complementar.csv");
+                var hashArquivo = "hash-teste";
+
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(cargaExistente));
+
+                when(processamentoArquivoRepository.criar(
+                                anyString(),
+                                anyString(),
+                                anyString(),
+                                anyLong(),
+                                any(TipoArquivoCsv.class)))
+                                .thenReturn(20L);
+
+                var resultado = service.prepararCargaEReservarProcessamento(
+                                metadados,
+                                arquivo,
+                                hashArquivo);
+
+                var ordem = inOrder(repository, processamentoArquivoRepository);
+
+                ordem.verify(repository).bloquearCarga(cargaExistente.id());
+
+                ordem.verify(processamentoArquivoRepository).criar(
+                                arquivo.getFileName().toString(),
+                                arquivo.toString(),
+                                hashArquivo,
+                                cargaExistente.id(),
+                                TipoArquivoCsv.COMPLEMENTAR);
+
+                assertEquals(20L, resultado.idProcessamentoArquivo());
+                assertEquals(cargaExistente.id(), resultado.idCargaLogica());
+        }
+
+        private MetadadosArquivoCsv metadados(
+                        TipoArquivoCsv tipoArquivo) {
+
+                return new MetadadosArquivoCsv(
+                                ID_CARGA,
+                                tipoArquivo,
+                                TOTAL_REGISTROS);
+        }
+
+        private CargaLogica carga(StatusCargaLogica status) {
+
+                return new CargaLogica(
+                                10L,
+                                ID_CARGA,
+                                TOTAL_REGISTROS,
+                                status);
+        }
+
+        @Test
+        void deveRejeitarOriginalQuandoCargaJaConcluida() {
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(
+                                                carga(StatusCargaLogica.CONCLUIDA)));
+
+                assertThrows(IllegalArgumentException.class,
+                                () -> service.prepararCarga(
+                                                metadados(TipoArquivoCsv.ORIGINAL)));
+
+                verify(repository, never()).criar(anyString(), anyLong());
+        }
+
+        @Test
+        void deveCriarCargaOriginalEReservarProcessamento() {
+                var arquivo = Path.of("original.csv");
+                var cargaCriada = carga(StatusCargaLogica.INCOMPLETA);
+
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.empty());
+
+                when(repository.criar(ID_CARGA, TOTAL_REGISTROS))
+                                .thenReturn(cargaCriada);
+
+                when(processamentoArquivoRepository.criar(
+                                anyString(), anyString(), anyString(),
+                                anyLong(), any(TipoArquivoCsv.class)))
+                                .thenReturn(20L);
+
+                var resultado = service.prepararCargaEReservarProcessamento(
+                                metadados(TipoArquivoCsv.ORIGINAL),
+                                arquivo,
+                                "hash-original");
+
+                var ordem = inOrder(repository, processamentoArquivoRepository);
+
+                ordem.verify(repository).criar(ID_CARGA, TOTAL_REGISTROS);
+
+                ordem.verify(processamentoArquivoRepository).criar(
+                                "original.csv",
+                                arquivo.toString(),
+                                "hash-original",
+                                10L,
+                                TipoArquivoCsv.ORIGINAL);
+
+                assertEquals(20L, resultado.idProcessamentoArquivo());
+                assertEquals(10L, resultado.idCargaLogica());
+        }
+
+        @Test
+        void deveRejeitarReservaComplementarSemCargaExistente() {
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.empty());
+
+                assertThrows(IllegalArgumentException.class,
+                                () -> service.prepararCargaEReservarProcessamento(
+                                                metadados(TipoArquivoCsv.COMPLEMENTAR),
+                                                Path.of("complementar.csv"),
+                                                "hash"));
+
+                verifyNoInteractions(processamentoArquivoRepository);
+                verify(repository, never()).bloquearCarga(anyLong());
+        }
+
+        @Test
+        void deveRejeitarReservaDeCargaConcluida() {
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(
+                                                carga(StatusCargaLogica.CONCLUIDA)));
+
+                assertThrows(IllegalArgumentException.class,
+                                () -> service.prepararCargaEReservarProcessamento(
+                                                metadados(TipoArquivoCsv.COMPLEMENTAR),
+                                                Path.of("complementar.csv"),
+                                                "hash"));
+
+                verifyNoInteractions(processamentoArquivoRepository);
+        }
+
+        @Test
+        void deveRejeitarReservaComTotalDivergente() {
+                when(repository.buscarPorIdCarga(ID_CARGA))
+                                .thenReturn(Optional.of(
+                                                carga(StatusCargaLogica.INCOMPLETA)));
+
+                var metadados = new MetadadosArquivoCsv(
+                                ID_CARGA,
+                                TipoArquivoCsv.COMPLEMENTAR,
+                                90000L);
+
+                assertThrows(IllegalArgumentException.class,
+                                () -> service.prepararCargaEReservarProcessamento(
+                                                metadados,
+                                                Path.of("complementar.csv"),
+                                                "hash"));
+
+                verifyNoInteractions(processamentoArquivoRepository);
+        }
+
+        @Test
+        void deveConcluirCargaQuandoRepositoryConfirmarConclusao() {
+                when(repository.concluirSeCompleta(10L))
+                                .thenReturn(true);
+
+                boolean resultado = service.conciliarCarga(10L);
+
+                assertTrue(resultado);
+
+                var ordem = inOrder(repository);
+                ordem.verify(repository).bloquearCarga(10L);
+                ordem.verify(repository).concluirSeCompleta(10L);
+        }
+
+        @Test
+        void deveManterCargaIncompletaQuandoNaoAtenderCriterios() {
+                when(repository.concluirSeCompleta(10L))
+                                .thenReturn(false);
+
+                boolean resultado = service.conciliarCarga(10L);
+
+                assertFalse(resultado);
+                verify(repository).bloquearCarga(10L);
+                verify(repository).concluirSeCompleta(10L);
+        }
+
+        @Test
+        void deveRejeitarConciliacaoSemId() {
+                assertThrows(NullPointerException.class,
+                                () -> service.conciliarCarga(null));
+
+                verifyNoInteractions(repository);
+        }
+
+        @Test
+        void deveRejeitarReservaComMetadadosNulos() {
+                assertThrows(NullPointerException.class,
+                                () -> service.prepararCargaEReservarProcessamento(
+                                                null,
+                                                Path.of("arquivo.csv"),
+                                                "hash"));
+
+                verifyNoInteractions(repository, processamentoArquivoRepository);
+        }
+
+        @Test
+        void deveRejeitarReservaComArquivoNulo() {
+                assertThrows(NullPointerException.class,
+                                () -> service.prepararCargaEReservarProcessamento(
+                                                metadados(TipoArquivoCsv.ORIGINAL),
+                                                null,
+                                                "hash"));
+
+                verifyNoInteractions(repository, processamentoArquivoRepository);
+        }
+
+        @Test
+        void deveRejeitarReservaComHashNulo() {
+                assertThrows(NullPointerException.class,
+                                () -> service.prepararCargaEReservarProcessamento(
+                                                metadados(TipoArquivoCsv.ORIGINAL),
+                                                Path.of("arquivo.csv"),
+                                                null));
+
+                verifyNoInteractions(repository, processamentoArquivoRepository);
+        }
 }

@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.exception.InicializacaoJobException;
 import br.com.jards.filepulse.batch.model.MetadadosArquivoCsv;
+import br.com.jards.filepulse.batch.model.ReservaProcessamento;
 import br.com.jards.filepulse.batch.reader.LeitorMetadadosArquivoCsv;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import lombok.extern.log4j.Log4j2;
@@ -64,29 +65,20 @@ public class JobService {
                     e);
         }
 
-        var cargaLogica = cargaLogicaService.prepararCarga(metadados);
-
-        Long idProcessamentoArquivo;
+        ReservaProcessamento reserva;
 
         try {
-            idProcessamentoArquivo = processamentoArquivoRepository.criar(
-                    arquivo.getFileName().toString(),
-                    arquivo.toString(),
-                    hashArquivo,
-                    cargaLogica.id(),
-                    metadados.tipoArquivo());
-
+            reserva = cargaLogicaService.prepararCargaEReservarProcessamento(metadados, arquivo, hashArquivo);
         } catch (DuplicateKeyException e) {
-            log.warn(
-                    "Processamento não iniciado. Já existe um arquivo registrado com o hash: {}",
-                    hashArquivo);
+            log.warn("Processamento não iniciado. Hash já registrado: {}", hashArquivo);
+
             return false;
         }
 
         var parametros = construirParametrosJob(
                 arquivo,
-                idProcessamentoArquivo,
-                cargaLogica.id());
+                reserva.idProcessamentoArquivo(),
+                reserva.idCargaLogica());
 
         try {
             jobLauncher.run(processamentoArquivoJob, parametros);
@@ -100,8 +92,7 @@ public class JobService {
             log.error("Erro ao iniciar o Job para o arquivo {}", arquivo, e);
 
             throw new InicializacaoJobException(
-                    "Não foi possível iniciar o Job para o arquivo %s".formatted(arquivo),
-                    e);
+                    "Não foi possível iniciar o Job para o arquivo %s".formatted(arquivo), e);
         }
     }
 
