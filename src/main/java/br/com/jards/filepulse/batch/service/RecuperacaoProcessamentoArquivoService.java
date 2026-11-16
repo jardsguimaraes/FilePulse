@@ -10,6 +10,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.batch.config.RecuperacaoProcessamentoArquivoProperties;
+import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
+import br.com.jards.filepulse.batch.exception.MovimentacaoArquivoException;
 import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import br.com.jards.filepulse.watcher.config.ArmazenamentoArquivoProperties;
@@ -83,13 +85,18 @@ public class RecuperacaoProcessamentoArquivoService {
     private void reconciliarProcessamentoExistente(Path arquivo, ProcessamentoArquivo processamento) {
 
         switch (processamento.status()) {
-            case COMPLETO -> reconciliarProcessamentoFinalizado(arquivo, processamento, true);
-            case FALHOU, ABANDONADO -> reconciliarProcessamentoFinalizado(arquivo, processamento, false);
-            default -> log.warn(
-                    "Processamento existente ainda não possui estratégia de reconciliação. id: {}, status: {}, arquivo: {}",
-                    processamento.id(),
-                    processamento.status(),
-                    arquivo);
+            case COMPLETO, COMPLETO_COM_FALHAS ->
+                reconciliarProcessamentoFinalizado(
+                        arquivo, processamento, true);
+            case FALHOU, ABANDONADO ->
+                reconciliarProcessamentoFinalizado(
+                        arquivo, processamento, false);
+            default ->
+                log.warn(
+                        "Processamento existente ainda não possui estratégia de reconciliação. id: {}, status: {}, arquivo: {}",
+                        processamento.id(),
+                        processamento.status(),
+                        arquivo);
         }
     }
 
@@ -130,7 +137,9 @@ public class RecuperacaoProcessamentoArquivoService {
     }
 
     private void recuperarProcessamentosAbandonados() {
+
         var iniciadoAntesDe = LocalDateTime.now().minusMinutes(propriedadesRecuperacao.getAbandonedAfterMinutes());
+
         var candidatos = processamentoArquivoRepository.buscarCandidatosAbandonados(iniciadoAntesDe);
 
         if (candidatos.isEmpty()) {
@@ -138,43 +147,83 @@ public class RecuperacaoProcessamentoArquivoService {
             return;
         }
 
-        log.warn("{} processamento(s) candidato(s) a abandono encontrado(s).", candidatos.size());
+        log.warn(
+                "{} processamento(s) candidato(s) a abandono encontrado(s).", candidatos.size());
 
-        candidatos.forEach(
-                processamento -> {
-                    var arquivo = Path.of(processamento.caminhoArquivo());
+        for (var processamento : candidatos) {
 
-                    if (Files.exists(arquivo)) {
-                        log.warn(
-                                "Processamento abandonado com arquivo disponível. id: {}, arquivo: {}, iniciado em: {}",
-                                processamento.id(),
-                                arquivo,
-                                processamento.iniciadoEm());
+            var idProcessamentoArquivo = processamento.idProcessamentoArquivo();
+            var idTentativa = processamento.idTentativa();
+            var arquivo = processamento.arquivo();
 
-                        var arquivoFinal = movimentacaoArquivoService.moverParaErro(arquivo);
-                        var atualizado = processamentoArquivoRepository.marcarComoAbandonado(
-                                processamento.id(),
-                                "Processamento interrompido antes da finalização da aplicação",
-                                arquivoFinal.toString());
+            try {
 
-                        if (atualizado) {
-                            log.warn("Processamento marcado como ABANDONADO. id: {}, arquivo final: {}",
-                                    processamento.id(),
-                                    arquivoFinal);
-                        } else {
-                            log.warn(
-                                    "Processamento não foi marcado como ABANDONADO porque seu estado foi alterado. id: {}",
-                                    processamento.id());
-                        }
+                if (!Files.isRegularFile(arquivo)) {
+                    log.error(
+                            "Processamento candidato a abandono sem arquivo disponível. id: {}, tentativa: {}, arquivo: {}",
+                            idProcessamentoArquivo,
+                            idTentativa,
+                            arquivo);
+                    continue;
+                }
 
-                        return;
-                    } else {
-                        log.error(
-                                "Processamento abandonado sem arquivo no caminho esperado. id: {}, arquivo: {}, iniciado em: {}",
-                                processamento.id(),
-                                arquivo,
-                                processamento.iniciadoEm());
-                    }
-                });
+                boolean atualizado = processamentoArquivoRepository.marcarComoAbandonado(
+                        idProcessamentoArquivo,
+                        idTentativa,
+                        "Processamento interrompido antes da finalização da aplicação");
+
+                if (!atualizado) {
+                    log.warn(
+                            "Processamento não foi marcado como ABANDONADO. O estado ou a tentativa ativa pode ter mudado. "
+                                    + "id: {}, tentativa: {}",
+                            idProcessamentoArquivo,
+                            idTentativa);
+                    continue;
+                }
+
+                Path arquivoFinal = movimentacaoArquivoService.moverParaErro(arquivo);
+
+                boolean caminhoAtualizado = processamentoArquivoRepository
+                        .atualizarCaminhoFinalArquivo(
+                                idProcessamentoArquivo,
+                                arquivoFinal.toString(),
+                                StatusProcessamentoArquivo.ABANDONADO);
+
+                if (!caminhoAtualizado) {
+                    log.error(
+                            "Arquivo movimentado, mas o caminho final não foi atualizado. id: {}, tentativa: {}, destino: {}",
+                            idProcessamentoArquivo,
+                            idTentativa,
+                            arquivoFinal);
+                    continue;
+                }
+
+                log.warn(
+                        "Processamento recuperado como ABANDONADO. id: {}, tentativa: {}, origem: {}, destino: {}",
+                        idProcessamentoArquivo,
+                        idTentativa,
+                        arquivo,
+                        arquivoFinal);
+
+            } catch (MovimentacaoArquivoException e) {
+
+                log.error(
+                        "Falha ao movimentar arquivo de processamento abandonado. id: {}, tentativa: {}, arquivo: {}. "
+                                + "O registro poderá permanecer ABANDONADO sem caminho final.",
+                        idProcessamentoArquivo,
+                        idTentativa,
+                        arquivo,
+                        e);
+
+            } catch (Exception e) {
+
+                log.error(
+                        "Erro inesperado durante a recuperação do processamento. id: {}, tentativa: {}, arquivo: {}",
+                        idProcessamentoArquivo,
+                        idTentativa,
+                        arquivo,
+                        e);
+            }
+        }
     }
 }

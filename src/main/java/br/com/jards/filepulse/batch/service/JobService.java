@@ -2,6 +2,7 @@ package br.com.jards.filepulse.batch.service;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.UUID;
 
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParameters;
@@ -78,7 +79,8 @@ public class JobService {
         var parametros = construirParametrosJob(
                 arquivo,
                 reserva.idProcessamentoArquivo(),
-                reserva.idCargaLogica());
+                reserva.idCargaLogica(),
+                reserva.idTentativa());
 
         try {
             jobLauncher.run(processamentoArquivoJob, parametros);
@@ -138,16 +140,14 @@ public class JobService {
         }
     }
 
-    private JobParameters construirParametrosJob(
-            Path arquivo,
-            Long idProcessamentoArquivo,
-            Long idCargaLogica) {
+    private JobParameters construirParametrosJob(Path arquivo, Long idProcessamentoArquivo, Long idCargaLogica,
+            UUID idTentativa) {
 
         return new JobParametersBuilder()
                 .addString("filePath", arquivo.toString(), false)
                 .addLong("fileProcessingId", idProcessamentoArquivo)
                 .addLong("logicalLoadId", idCargaLogica, false)
-                .addLong("timestamp", System.currentTimeMillis(), false)
+                .addString("attemptId", idTentativa.toString(), true)
                 .toJobParameters();
     }
 

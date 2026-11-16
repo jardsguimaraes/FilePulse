@@ -1,19 +1,27 @@
 package br.com.jards.filepulse.api.service;
 
+import java.util.Objects;
+import java.util.UUID;
+
+import org.flywaydb.core.internal.jdbc.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.api.dto.PaginaResponse;
 import br.com.jards.filepulse.api.dto.ProcessamentoArquivoResponse;
 import br.com.jards.filepulse.api.exception.FileProcessingNotFoundException;
+import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 
 @Service
 public class ProcessamentoArquivoService {
 
     private final ProcessamentoArquivoRepository ProcessamentoArquivoRepository;
+    private final JdbcTemplate jdbcTemplate;
 
-    public ProcessamentoArquivoService(ProcessamentoArquivoRepository ProcessamentoArquivoRepository) {
+    public ProcessamentoArquivoService(ProcessamentoArquivoRepository ProcessamentoArquivoRepository,
+            JdbcTemplate jdbcTemplate) {
         this.ProcessamentoArquivoRepository = ProcessamentoArquivoRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public ProcessamentoArquivoResponse buscarPorId(Long id) {

@@ -2,6 +2,7 @@ package br.com.jards.filepulse.batch.service;
 
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -85,12 +86,12 @@ public class CargaLogicaService {
     }
 
     @Transactional
-    public ReservaProcessamento prepararCargaEReservarProcessamento(MetadadosArquivoCsv metadados, Path arquivo,
-            String hashArquivo) {
+    public ReservaProcessamento prepararCargaEReservarProcessamento(MetadadosArquivoCsv metadados,
+            Path arquivo, String hashArquivo) {
 
-        Objects.requireNonNull(metadados);
-        Objects.requireNonNull(arquivo);
-        Objects.requireNonNull(hashArquivo);
+        Objects.requireNonNull(metadados, "Os metadados são obrigatórios");
+        Objects.requireNonNull(arquivo, "O arquivo é obrigatório");
+        Objects.requireNonNull(hashArquivo, "O hash do arquivo é obrigatório");
 
         CargaLogica carga;
 
@@ -104,17 +105,26 @@ public class CargaLogicaService {
             repository.bloquearCarga(cargaExistente.id());
 
             carga = prepararComplementar(metadados);
+
         } else {
-            throw new IllegalArgumentException("Tipo de arquivo não suportado: %s".formatted(metadados.tipoArquivo()));
+            throw new IllegalArgumentException("Tipo de arquivo não suportado: %s"
+                            .formatted(metadados.tipoArquivo()));
         }
+
+        UUID idTentativa = UUID.randomUUID();
 
         Long idProcessamentoArquivo = processamentoArquivoRepository.criar(
                 arquivo.getFileName().toString(),
                 arquivo.toString(),
                 hashArquivo,
                 carga.id(),
-                metadados.tipoArquivo());
+                metadados.tipoArquivo(),
+                idTentativa);
 
-        return new ReservaProcessamento(idProcessamentoArquivo, carga.id());
+        return new ReservaProcessamento(
+                idProcessamentoArquivo,
+                carga.id(),
+                idTentativa);
     }
+
 }

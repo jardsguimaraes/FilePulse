@@ -1,11 +1,11 @@
 package br.com.jards.filepulse.batch.listener;
 
 import java.nio.file.Path;
+import java.util.UUID;
 
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionListener;
-import org.springframework.batch.core.explore.JobExplorer;
 import org.springframework.stereotype.Component;
 
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
@@ -20,45 +20,66 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
 
         private final ProcessamentoArquivoRepository processamentoArquivoRepository;
         private final MovimentacaoArquivoService movimentacaoArquivoService;
-        private final JobExplorer jobExplorer;
         private final ProcessamentoErroRepository processamentoErroRepository;
 
         public ProcessamentoArquivoJobListener(ProcessamentoArquivoRepository processamentoArquivoRepository,
-                        MovimentacaoArquivoService movimentacaoArquivoService, JobExplorer jobExplorer,
+                        MovimentacaoArquivoService movimentacaoArquivoService,
                         ProcessamentoErroRepository processamentoErroRepository) {
                 this.processamentoArquivoRepository = processamentoArquivoRepository;
                 this.movimentacaoArquivoService = movimentacaoArquivoService;
-                this.jobExplorer = jobExplorer;
                 this.processamentoErroRepository = processamentoErroRepository;
         }
 
         @Override
         public void beforeJob(JobExecution execucaoJob) {
-                var id = execucaoJob.getJobParameters()
+
+                Long idProcessamentoArquivo = execucaoJob
+                                .getJobParameters()
                                 .getLong("fileProcessingId");
 
-                var caminhoArquivo = execucaoJob.getJobParameters()
-                                .getString("filePath");
+                String parametroTentativa = execucaoJob
+                                .getJobParameters()
+                                .getString("attemptId");
 
-                var atualizado = processamentoArquivoRepository.marcarComoEmProcessamento(id,
-                                caminhoArquivo);
-
-                if (!atualizado) {
-                        throw new IllegalStateException("Não foi possível iniciar o processamento %d"
-                                        .formatted(id));
+                if (parametroTentativa == null || parametroTentativa.isBlank()) {
+                        throw new IllegalStateException("O Job não possui identificador de tentativa");
                 }
+
+                UUID idTentativa = UUID.fromString(parametroTentativa);
+
+                boolean tentativaAtiva = processamentoArquivoRepository.tentativaEstaAtiva(
+                                idProcessamentoArquivo, idTentativa);
+
+                if (!tentativaAtiva) {
+                        throw new IllegalStateException("A tentativa %s não está ativa para o processamento %d"
+                                        .formatted(idTentativa, idProcessamentoArquivo));
+                }
+
+                log.info("Iniciando processamento. ID: {}, Tentativa: {}", idProcessamentoArquivo, idTentativa);
         }
 
         @Override
         public void afterJob(JobExecution execucaoJob) {
-                var id = execucaoJob.getJobParameters()
-                                .getLong("fileProcessingId");
+                var id = execucaoJob.getJobParameters().getLong("fileProcessingId");
 
-                var execucoes = jobExplorer.getJobExecutions(execucaoJob.getJobInstance());
+                String parametroTentativa = execucaoJob.getJobParameters()
+                                .getString("attemptId");
 
-                var etapas = execucoes.stream()
-                                .flatMap(execucao -> execucao.getStepExecutions().stream())
-                                .toList();
+                if (parametroTentativa == null || parametroTentativa.isBlank()) {
+                        log.error("Finalização ignorada: Job sem identificador de tentativa. Processamento: {}", id);
+                        return;
+                }
+
+                UUID idTentativa = UUID.fromString(parametroTentativa);
+
+                if (!processamentoArquivoRepository.tentativaEstaAtiva(id, idTentativa)) {
+                        log.warn("Finalização ignorada. A tentativa {} não está mais ativa para o processamento {}",
+                                        idTentativa,
+                                        id);
+                        return;
+                }
+
+                var etapas = execucaoJob.getStepExecutions();
 
                 var quantidadeLida = etapas.stream()
                                 .mapToLong(step -> step.getReadCount())
@@ -99,9 +120,15 @@ public class ProcessamentoArquivoJobListener implements JobExecutionListener {
                         arquivoFinal = movimentacaoArquivoService.moverParaErro(Path.of(caminhoArquivo));
                 }
 
-                processamentoArquivoRepository.finalizar(id, status, quantidadeLida, quantidadeGravada,
+                processamentoArquivoRepository.finalizar(
+                                id,
+                                idTentativa,
+                                status,
+                                quantidadeLida,
+                                quantidadeGravada,
                                 quantidadeIgnorada,
-                                mensagemErro, arquivoFinal.toString());
+                                mensagemErro,
+                                arquivoFinal.toString());
 
                 log.info("Processamento finalizado. ID: {}, Status FilePulse: {}, Lidos: {}, Gravados: {}, Ignorados: {}",
                                 id,
