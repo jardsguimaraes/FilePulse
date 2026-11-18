@@ -3,16 +3,28 @@ package br.com.jards.filepulse.batch.service;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.UUID;
 
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParametersBuilder;
+import org.springframework.batch.core.explore.JobExplorer;
+import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import br.com.jards.filepulse.batch.config.RecuperacaoProcessamentoArquivoProperties;
+import br.com.jards.filepulse.batch.enums.AcaoReconciliacaoBatch;
+import br.com.jards.filepulse.batch.enums.SituacaoAbandonoExecucao;
+import br.com.jards.filepulse.batch.enums.SituacaoExecucaoBatch;
+import br.com.jards.filepulse.batch.enums.SituacaoInstanciaFilePulse;
 import br.com.jards.filepulse.batch.enums.StatusProcessamentoArquivo;
 import br.com.jards.filepulse.batch.exception.MovimentacaoArquivoException;
 import br.com.jards.filepulse.batch.model.ProcessamentoArquivo;
+import br.com.jards.filepulse.batch.repository.InstanciaFilePulseRepository;
 import br.com.jards.filepulse.batch.repository.ProcessamentoArquivoRepository;
 import br.com.jards.filepulse.watcher.config.ArmazenamentoArquivoProperties;
 import br.com.jards.filepulse.watcher.enums.MotivoRejeicaoArquivo;
@@ -23,24 +35,37 @@ import lombok.extern.log4j.Log4j2;
 @Log4j2
 public class RecuperacaoProcessamentoArquivoService {
 
+    private final ControleExecucaoJobService controleExecucaoJobService;
     private final ProcessamentoArquivoRepository processamentoArquivoRepository;
     private final RecuperacaoProcessamentoArquivoProperties propriedadesRecuperacao;
     private final MovimentacaoArquivoService movimentacaoArquivoService;
     private final ArmazenamentoArquivoProperties propriedadesArmazenamento;
     private final HashArquivoService hashArquivoService;
     private final RejeicaoArquivoService rejeicaoArquivoService;
+    private final JobExplorer jobExplorer;
+    private final JobRepository jobRepository;
+    private final InstanciaFilePulseRepository instanciaFilePulseRepository;
+    private final IdentidadeInstanciaService identidadeInstanciaService;
 
     public RecuperacaoProcessamentoArquivoService(ProcessamentoArquivoRepository processamentoArquivoRepository,
             RecuperacaoProcessamentoArquivoProperties propriedadesRecuperacao,
             MovimentacaoArquivoService movimentacaoArquivoService,
             ArmazenamentoArquivoProperties propriedadesArmazenamento, HashArquivoService hashArquivoService,
-            RejeicaoArquivoService rejeicaoArquivoService) {
+            RejeicaoArquivoService rejeicaoArquivoService, JobExplorer jobExplorer, JobRepository jobRepository,
+            ControleExecucaoJobService controleExecucaoJobService,
+            InstanciaFilePulseRepository instanciaFilePulseRepository,
+            IdentidadeInstanciaService identidadeInstanciaService) {
         this.processamentoArquivoRepository = processamentoArquivoRepository;
         this.propriedadesRecuperacao = propriedadesRecuperacao;
         this.movimentacaoArquivoService = movimentacaoArquivoService;
         this.propriedadesArmazenamento = propriedadesArmazenamento;
         this.hashArquivoService = hashArquivoService;
         this.rejeicaoArquivoService = rejeicaoArquivoService;
+        this.jobExplorer = jobExplorer;
+        this.jobRepository = jobRepository;
+        this.controleExecucaoJobService = controleExecucaoJobService;
+        this.instanciaFilePulseRepository = instanciaFilePulseRepository;
+        this.identidadeInstanciaService = identidadeInstanciaService;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -139,7 +164,6 @@ public class RecuperacaoProcessamentoArquivoService {
     private void recuperarProcessamentosAbandonados() {
 
         var iniciadoAntesDe = LocalDateTime.now().minusMinutes(propriedadesRecuperacao.getAbandonedAfterMinutes());
-
         var candidatos = processamentoArquivoRepository.buscarCandidatosAbandonados(iniciadoAntesDe);
 
         if (candidatos.isEmpty()) {
@@ -154,16 +178,78 @@ public class RecuperacaoProcessamentoArquivoService {
 
             var idProcessamentoArquivo = processamento.idProcessamentoArquivo();
             var idTentativa = processamento.idTentativa();
-            var arquivo = processamento.arquivo();
+            var arquivo = localizarArquivoTentativa(processamento.arquivo(), processamento.arquivoOrigemTentativa());
+            UUID idInstancia = processamento.idInstancia();
+
+            SituacaoInstanciaFilePulse situacaoInstancia = classificarInstancia(idInstancia);
+
+            log.info(
+                    "Verificação da instância responsável. Processamento: {}, tentativa: {}, instância: {}, situação: {}",
+                    idProcessamentoArquivo,
+                    idTentativa,
+                    idInstancia,
+                    situacaoInstancia);
+
+            if (situacaoInstancia == SituacaoInstanciaFilePulse.HEARTBEAT_RECENTE) {
+
+                log.info(
+                        "Recuperação adiada: instância responsável apresenta heartbeat recente. Processamento: {}, instância: {}",
+                        idProcessamentoArquivo,
+                        idInstancia);
+
+                continue;
+            }
 
             try {
 
-                if (!Files.isRegularFile(arquivo)) {
-                    log.error(
-                            "Processamento candidato a abandono sem arquivo disponível. id: {}, tentativa: {}, arquivo: {}",
+                if (arquivo == null) {
+                    log.warn("Não foi possível localizar o arquivo da tentativa. Processamento: {}, tentativa: {},"
+                            + "caminho operacional: {}, origem: {}",
                             idProcessamentoArquivo,
                             idTentativa,
-                            arquivo);
+                            processamento.arquivo(),
+                            processamento.arquivoOrigemTentativa());
+
+                    continue;
+                }
+
+                if (validarIntegridadeArquivo(arquivo, idProcessamentoArquivo)) {
+                    log.error(
+                            "Recuperação interrompida por divergência de integridade. Processamento: {}, tentativa: {}",
+                            idProcessamentoArquivo,
+                            idTentativa);
+
+                    continue;
+                }
+
+                if (controleExecucaoJobService.estaEmExecucao(idTentativa)) {
+                    log.debug(
+                            "Recuperação ignorada: tentativa ainda controlada pela instância atual. Processamento: {}, tentativa: {}",
+                            idProcessamentoArquivo,
+                            idTentativa);
+
+                    continue;
+                }
+
+                var situacaoBatch = classificarExecucaoBatch(idProcessamentoArquivo, idTentativa);
+
+                var acaoReconciliacao = determinarAcaoReconciliacao(
+                        situacaoBatch);
+
+                log.warn(
+                        "Reconciliação identificada.Processamento: {}, tentativa: {}, situação Batch: {}, ação necessária: {}",
+                        idProcessamentoArquivo,
+                        idTentativa,
+                        situacaoBatch,
+                        acaoReconciliacao);
+
+                if (situacaoBatch != SituacaoExecucaoBatch.NAO_LOCALIZADA) {
+                    log.warn(
+                            "Processamento requer reconciliação com o Spring Batch. Processamento: {}, tentativa: {}, situação: {}",
+                            idProcessamentoArquivo,
+                            idTentativa,
+                            situacaoBatch);
+
                     continue;
                 }
 
@@ -181,7 +267,7 @@ public class RecuperacaoProcessamentoArquivoService {
                     continue;
                 }
 
-                Path arquivoFinal = movimentacaoArquivoService.moverParaErro(arquivo);
+                Path arquivoFinal = garantirArquivoNoDiretorioErro(arquivo);
 
                 boolean caminhoAtualizado = processamentoArquivoRepository
                         .atualizarCaminhoFinalArquivo(
@@ -226,4 +312,196 @@ public class RecuperacaoProcessamentoArquivoService {
             }
         }
     }
+
+    private Path localizarArquivoTentativa(Path arquivoAtual, Path arquivoOrigemTentativa) {
+
+        if (Files.isRegularFile(arquivoAtual)) {
+            return arquivoAtual;
+        }
+
+        if (arquivoOrigemTentativa != null && Files.isRegularFile(arquivoOrigemTentativa)) {
+            log.warn("Arquivo não encontrado no caminho operacional. Utilizando caminho de origem registrado: {}",
+                    arquivoOrigemTentativa);
+
+            return arquivoOrigemTentativa;
+        }
+
+        return null;
+    }
+
+    private boolean validarIntegridadeArquivo(Path arquivo, Long idProcessamentoArquivo) {
+        var processamento = processamentoArquivoRepository.buscarPorId(idProcessamentoArquivo)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Processamento não encontrado: %d".formatted(idProcessamentoArquivo)));
+
+        String hashEsperado = processamento.hashArquivo();
+        String hashAtual = hashArquivoService.calcular(arquivo);
+
+        if (!hashEsperado.equals(hashAtual)) {
+            log.error("Integridade inválida durante recuperação. Processamento: {}, arquivo: {}, "
+                    + "hash esperado: {}, hash encontrado: {}",
+                    idProcessamentoArquivo,
+                    arquivo,
+                    hashEsperado,
+                    hashAtual);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private Path garantirArquivoNoDiretorioErro(Path arquivo) {
+        Path diretrorioErro = Path.of(
+                propriedadesArmazenamento.getDiretorioErro())
+                .toAbsolutePath()
+                .normalize();
+
+        Path caminhoArquivo = arquivo.toAbsolutePath().normalize();
+
+        if (caminhoArquivo.getParent().equals(diretrorioErro)) {
+            log.info("Arquivo já está no diretório de erros: {}", caminhoArquivo);
+            return caminhoArquivo;
+        }
+
+        Path arquivoErro = movimentacaoArquivoService.moverParaErro(arquivo);
+
+        log.info("Arquivo movimentado durante recuperação. Origem: {}, destino: {}",
+                arquivo,
+                arquivoErro);
+
+        return arquivoErro;
+    }
+
+    private boolean existeExecucaoBatchAtiva(Long idProcessamentoArquivo) {
+
+        var parametros = new JobParametersBuilder()
+                .addLong("fileProcessingId", idProcessamentoArquivo)
+                .toJobParameters();
+
+        var instancia = jobRepository.getJobInstance(processamentoArquivoJobNome(), parametros);
+
+        if (instancia == null) {
+            log.warn("Nenhuma JobInstance encontrada para o processamento {}", idProcessamentoArquivo);
+            return false;
+        }
+
+        return jobExplorer.getJobExecutions(instancia)
+                .stream()
+                .anyMatch(JobExecution::isRunning);
+    }
+
+    private String processamentoArquivoJobNome() {
+        return "processarArquivoJob";
+    }
+
+    private JobExecution buscarExecucaoTentativa(Long idProcessamentoArquivo, UUID idTentativa) {
+        var parametros = new JobParametersBuilder().addLong("fileProcessingId", idProcessamentoArquivo)
+                .toJobParameters();
+
+        var instancia = jobRepository.getJobInstance(processamentoArquivoJobNome(), parametros);
+
+        if (instancia == null) {
+            log.warn("JobInstance não encontrada. Processamento: {}, tentativa: {}",
+                    idProcessamentoArquivo,
+                    idTentativa);
+
+            return null;
+        }
+
+        return jobExplorer.getJobExecutions(instancia)
+                .stream()
+                .filter(execucao -> {
+                    String parametroTentativa = execucao.getJobParameters().getString("attemptId");
+
+                    return idTentativa.toString().equals(parametroTentativa);
+                })
+                .max(Comparator.comparing(JobExecution::getId)).orElse(null);
+    }
+
+    private SituacaoExecucaoBatch classificarExecucaoBatch(Long idProcessamentoArquivo, UUID idTentativa) {
+        var execucao = buscarExecucaoTentativa(idProcessamentoArquivo, idTentativa);
+
+        if (execucao == null) {
+            return SituacaoExecucaoBatch.NAO_LOCALIZADA;
+        }
+
+        return switch (execucao.getStatus()) {
+            case COMPLETED -> SituacaoExecucaoBatch.CONCLUIDA;
+            case FAILED -> SituacaoExecucaoBatch.FALHOU;
+            case STOPPED -> SituacaoExecucaoBatch.INTERROMPIDA;
+            case STARTING, STARTED, STOPPING -> SituacaoExecucaoBatch.REGISTRADA_COMO_ATIVA;
+            default -> SituacaoExecucaoBatch.INDETERMINADA;
+        };
+    }
+
+    private AcaoReconciliacaoBatch determinarAcaoReconciliacao(SituacaoExecucaoBatch situacao) {
+        return switch (situacao) {
+            case NAO_LOCALIZADA -> AcaoReconciliacaoBatch.INVESTIGAR_EXECUCAO_AUSENTE;
+            case CONCLUIDA -> AcaoReconciliacaoBatch.VERIFICAR_FINALIZACAO;
+            case FALHOU -> AcaoReconciliacaoBatch.VERIFICAR_FALHA;
+            case INTERROMPIDA -> AcaoReconciliacaoBatch.VERIFICAR_INTERRUPCAO;
+            case REGISTRADA_COMO_ATIVA -> AcaoReconciliacaoBatch.VERIFICAR_EXECUCAO_ATIVA;
+            case INDETERMINADA -> AcaoReconciliacaoBatch.INVESTIGAR_ESTADO_INDETERMINADO;
+        };
+    }
+
+    private SituacaoAbandonoExecucao verificarAbandonoExecucao(Long idProcessamentoArquivo,
+            UUID idTentativa) {
+
+        if (controleExecucaoJobService.estaEmExecucao(idTentativa)) {
+
+            log.debug(
+                    "Tentativa ainda controlada pela JVM atual. Processamento: {}, tentativa: {}",
+                    idProcessamentoArquivo,
+                    idTentativa);
+
+            return SituacaoAbandonoExecucao.ATIVA_LOCALMENTE;
+        }
+
+        var situacaoBatch = classificarExecucaoBatch(idProcessamentoArquivo, idTentativa);
+
+        log.info(
+                "Verificação de abandono. Processamento: {}, tentativa: {}, situação Batch: {}",
+                idProcessamentoArquivo,
+                idTentativa,
+                situacaoBatch);
+
+        return SituacaoAbandonoExecucao.ESTADO_INDETERMINADO;
+    }
+
+    private SituacaoInstanciaFilePulse classificarInstancia(UUID idInstancia) {
+
+        if (idInstancia == null) {
+            return SituacaoInstanciaFilePulse.DESCONHECIDA;
+        }
+
+        if (idInstancia.equals(identidadeInstanciaService.obterIdInstancia())) {
+
+            return SituacaoInstanciaFilePulse.ATIVA_LOCALMENTE;
+        }
+
+        var instancia = instanciaFilePulseRepository.buscarPorId(idInstancia);
+
+        if (instancia.isEmpty()) {
+            return SituacaoInstanciaFilePulse.DESCONHECIDA;
+        }
+
+        var estado = instancia.get();
+
+        if (estado.encerradaEm() != null) {
+            return SituacaoInstanciaFilePulse.ENCERRAMENTO_REGISTRADO;
+        }
+
+        long segundosSemHeartbeat = Duration.between(
+                estado.ultimoHeartbeatEm(),
+                LocalDateTime.now()).getSeconds();
+
+        if (segundosSemHeartbeat > 60) {
+            return SituacaoInstanciaFilePulse.HEARTBEAT_EXPIRADO;
+        }
+
+        return SituacaoInstanciaFilePulse.HEARTBEAT_RECENTE;
+    }
+
 }

@@ -5,9 +5,11 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record CandidatoProcessamentoAbandonado(
-        Long idProcessamentoArquivo,
-        UUID idTentativas,
-        Path arquivo,
-        LocalDateTime iniciadoEm) {
+                Long idProcessamentoArquivo,
+                UUID idTentativa,
+                Path arquivo,
+                Path arquivoOrigemTentativa,
+                LocalDateTime iniciadoEm,
+                UUID idInstancia) {
 
 }

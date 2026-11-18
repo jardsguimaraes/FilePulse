@@ -31,22 +31,13 @@ public class ProcessamentoArquivoRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public Long criar(
-            String nomeArquivo,
-            String caminhoArquivo,
-            String hashArquivo,
-            Long idCargaLogica,
-            TipoArquivoCsv tipoArquivo,
-            UUID idTentativa) {
+    public Long criar(String nomeArquivo, String caminhoArquivo, String hashArquivo, Long idCargaLogica,
+            TipoArquivoCsv tipoArquivo, UUID idTentativa, UUID idInstancia) {
 
-        Objects.requireNonNull(idCargaLogica,
-                "O ID da carga lógica é obrigatório");
-
-        Objects.requireNonNull(tipoArquivo,
-                "O tipo do arquivo é obrigatório");
-
-        Objects.requireNonNull(idTentativa,
-                "O identificador da tentativa é obrigatório");
+        Objects.requireNonNull(idCargaLogica, "O ID da carga lógica é obrigatório");
+        Objects.requireNonNull(tipoArquivo, "O tipo do arquivo é obrigatório");
+        Objects.requireNonNull(idTentativa, "O identificador da tentativa é obrigatório");
+        Objects.requireNonNull(idInstancia, "O identificador da instância é obrigatório");
 
         String sql = """
                 INSERT INTO file_processing (
@@ -56,10 +47,11 @@ public class ProcessamentoArquivoRepository {
                     status,
                     logical_load_id,
                     file_type,
-                    active_attempt_id
+                    active_attempt_id,
+                    instance_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """;
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """;
 
         KeyHolder chaveGerada = new GeneratedKeyHolder();
 
@@ -72,11 +64,11 @@ public class ProcessamentoArquivoRepository {
             declaracao.setString(1, nomeArquivo);
             declaracao.setString(2, caminhoArquivo);
             declaracao.setString(3, hashArquivo);
-            declaracao.setString(4,
-                    StatusProcessamentoArquivo.PROCESSANDO.name());
+            declaracao.setString(4, StatusProcessamentoArquivo.PROCESSANDO.name());
             declaracao.setLong(5, idCargaLogica);
             declaracao.setString(6, tipoArquivo.name());
             declaracao.setObject(7, idTentativa);
+            declaracao.setObject(8, idInstancia);
 
             return declaracao;
 
@@ -187,7 +179,9 @@ public class ProcessamentoArquivoRepository {
                     id,
                     active_attempt_id,
                     file_path,
-                    started_at
+                    attempt_source_path,
+                    started_at,
+                    instance_id
                 FROM file_processing
                 WHERE status = ?
                     AND finished_at IS NULL
@@ -198,11 +192,19 @@ public class ProcessamentoArquivoRepository {
 
         return jdbcTemplate.query(
                 sql,
-                (rs, numeroLinha) -> new CandidatoProcessamentoAbandonado(
-                        rs.getLong("id"),
-                        rs.getObject("active_attempt_id", UUID.class),
-                        Path.of(rs.getString("file_path")),
-                        rs.getTimestamp("started_at").toLocalDateTime()),
+                (rs, numeroLinha) -> {
+                    String caminhoOrigem = rs.getString("attempt_source_path");
+
+                    return new CandidatoProcessamentoAbandonado(
+                            rs.getLong("id"),
+                            rs.getObject("active_attempt_id", UUID.class),
+                            Path.of(rs.getString("file_path")),
+                            caminhoOrigem != null
+                                    ? Path.of(caminhoOrigem)
+                                    : null,
+                            rs.getTimestamp("started_at").toLocalDateTime(),
+                            rs.getObject("instance_id", UUID.class));
+                },
                 StatusProcessamentoArquivo.PROCESSANDO.name(),
                 Timestamp.valueOf(iniciadoAntesDe));
     }
@@ -369,26 +371,38 @@ public class ProcessamentoArquivoRepository {
                 idProcessamentoArquivo);
     }
 
-    public boolean reservarTentativa(Long idProcessamentoArquivo, UUID idTentativa, String caminhoArquivo) {
+    public boolean reservarTentativa(Long idProcessamentoArquivo, UUID idTentativa, UUID idInstancia,
+            String caminhoArquivo) {
+
         Objects.requireNonNull(idTentativa, "O identificador da tentativa é obrigatório");
+
+        Objects.requireNonNull(idInstancia, "O identificador da instância é obrigatório");
+
+        Objects.requireNonNull(caminhoArquivo, "O caminho do arquivo é obrigatório");
 
         String sql = """
                 UPDATE file_processing
-                    SET active_attempt_id = ?,
-                        status = ?,
-                        file_path = ?,
-                        started_at = CURRENT_TIMESTAMP,
-                        finished_at = NULL,
-                        error_message = NULL,
-                        final_file_path = NULL
-                    WHERE id = ?
-                        AND status IN (?, ?)
+                SET active_attempt_id = ?,
+                    instance_id = ?,
+                    status = ?,
+                    file_path = ?,
+                    attempt_source_path = ?,
+                    started_at = CURRENT_TIMESTAMP,
+                    finished_at = NULL,
+                    error_message = NULL,
+                    final_file_path = NULL
+                WHERE id = ?
+                    AND status IN (?, ?)
+                    AND finished_at IS NOT NULL
+                    AND final_file_path IS NOT NULL
                 """;
 
         int linhasAtualizadas = jdbcTemplate.update(
                 sql,
                 idTentativa,
+                idInstancia,
                 StatusProcessamentoArquivo.PROCESSANDO.name(),
+                caminhoArquivo,
                 caminhoArquivo,
                 idProcessamentoArquivo,
                 StatusProcessamentoArquivo.FALHOU.name(),
@@ -419,4 +433,90 @@ public class ProcessamentoArquivoRepository {
 
         return quantidade != null && quantidade == 1;
     }
+
+    public boolean cancelarReservaTentativa(Long idProcessamentoArquivo, UUID idTentativa, String caminhoArquivo,
+            String mensagemErro) {
+        Objects.requireNonNull(idProcessamentoArquivo, "O ID do processamento é obrigatório");
+        Objects.requireNonNull(idTentativa, "O identificador da tentativa é obrigatório");
+        Objects.requireNonNull(caminhoArquivo, "O caminho do arquivo é obrigatório");
+
+        String sql = """
+                    UPDATE file_processing
+                    SET status = ?,
+                        finished_at = CURRENT_TIMESTAMP,
+                        error_message = ?,
+                        final_file_path = ?
+                    WHERE id = ?
+                        AND status = ?
+                        AND finished_at IS NULL
+                        AND active_attempt_id = ?
+                """;
+
+        int linhasAtualizadas = jdbcTemplate.update(
+                sql,
+                StatusProcessamentoArquivo.FALHOU.name(),
+                mensagemErro,
+                caminhoArquivo,
+                idProcessamentoArquivo,
+                StatusProcessamentoArquivo.PROCESSANDO.name(),
+                idTentativa);
+
+        return linhasAtualizadas == 1;
+    }
+
+    public boolean atualizarCaminhoTentativaAtiva(Long idProcessamentoArquivo, UUID idTentativa,
+            String caminhoArquivo) {
+        Objects.requireNonNull(idProcessamentoArquivo, "O ID do processamento é obrigatório");
+        Objects.requireNonNull(idTentativa, "O identificador da tentativa é obrigatório");
+        Objects.requireNonNull(caminhoArquivo, "O caminho do arquivo é obrigatório");
+
+        if (caminhoArquivo.isBlank()) {
+            throw new IllegalArgumentException("O caminho do arquivo não pode estar vazio");
+        }
+
+        String sql = """
+                    UPDATE file_processing
+                    SET file_path = ?
+                    WHERE id = ?
+                        AND active_attempt_id = ?
+                        AND status = ?
+                        AND finished_at IS NULL
+                """;
+
+        int linhasAtualizadas = jdbcTemplate.update(
+                sql,
+                caminhoArquivo,
+                idProcessamentoArquivo,
+                idTentativa,
+                StatusProcessamentoArquivo.PROCESSANDO.name());
+
+        return linhasAtualizadas == 1;
+    }
+
+    public boolean validarTentativaComBloqueio(Long idProcessamentoArquivo, UUID idTentativa, UUID idInstancia) {
+
+        Objects.requireNonNull(idProcessamentoArquivo, "O identificador do processamento é obrigatório");
+        Objects.requireNonNull(idTentativa, "O identificador da tentativa é obrigatório");
+        Objects.requireNonNull(idInstancia, "O identificador da instância é obrigatório");
+
+        String sql = """
+                    SELECT id
+                    FROM file_processing
+                    WHERE id = ?
+                        AND active_attempt_id = ?
+                        AND instance_id = ?
+                        AND status = ?
+                        AND finished_at IS NULL
+                    FOR UPDATE
+                """;
+
+        return !jdbcTemplate.query(
+                sql,
+                (rs, rowNum) -> rs.getLong("id"),
+                idProcessamentoArquivo,
+                idTentativa,
+                idInstancia,
+                StatusProcessamentoArquivo.PROCESSANDO.name()).isEmpty();
+    }
+
 }

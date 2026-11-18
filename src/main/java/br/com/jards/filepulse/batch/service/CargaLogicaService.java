@@ -22,13 +22,16 @@ public class CargaLogicaService {
     private final ArmazenamentoArquivoProperties armazenamentoArquivoProperties;
     private final CargaLogicaRepository repository;
     private final ProcessamentoArquivoRepository processamentoArquivoRepository;
+    private final IdentidadeInstanciaService identidadeInstanciaService;
 
     public CargaLogicaService(CargaLogicaRepository repository,
             ArmazenamentoArquivoProperties armazenamentoArquivoProperties,
-            ProcessamentoArquivoRepository processamentoArquivoRepository) {
+            ProcessamentoArquivoRepository processamentoArquivoRepository,
+            IdentidadeInstanciaService identidadeInstanciaService) {
         this.repository = repository;
         this.armazenamentoArquivoProperties = armazenamentoArquivoProperties;
         this.processamentoArquivoRepository = processamentoArquivoRepository;
+        this.identidadeInstanciaService = identidadeInstanciaService;
     }
 
     @Transactional
@@ -108,10 +111,11 @@ public class CargaLogicaService {
 
         } else {
             throw new IllegalArgumentException("Tipo de arquivo não suportado: %s"
-                            .formatted(metadados.tipoArquivo()));
+                    .formatted(metadados.tipoArquivo()));
         }
 
         UUID idTentativa = UUID.randomUUID();
+        UUID idInstancia = identidadeInstanciaService.obterIdInstancia();
 
         Long idProcessamentoArquivo = processamentoArquivoRepository.criar(
                 arquivo.getFileName().toString(),
@@ -119,7 +123,8 @@ public class CargaLogicaService {
                 hashArquivo,
                 carga.id(),
                 metadados.tipoArquivo(),
-                idTentativa);
+                idTentativa,
+                idInstancia);
 
         return new ReservaProcessamento(
                 idProcessamentoArquivo,

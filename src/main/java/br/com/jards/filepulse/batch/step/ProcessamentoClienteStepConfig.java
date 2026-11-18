@@ -1,10 +1,12 @@
+
 package br.com.jards.filepulse.batch.step;
 
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
-import org.springframework.batch.item.database.JdbcBatchItemWriter;
+import org.springframework.batch.item.ItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,6 +27,7 @@ public class ProcessamentoClienteStepConfig {
     private final PlatformTransactionManager transactionManager;
 
     public ProcessamentoClienteStepConfig(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+
         this.jobRepository = jobRepository;
         this.transactionManager = transactionManager;
     }
@@ -32,9 +35,13 @@ public class ProcessamentoClienteStepConfig {
     @Bean("customerProcessingStep")
     public Step etapaProcessamentoClientes(
             @Qualifier("customerItemReader") FlatFileItemReader<RegistroClienteCsv> clienteItemReader,
-            ClienteItemProcessor clienteItemProcessor, RegistroIgnoradoListener listenerRegistroIgnorado,
-            JdbcBatchItemWriter<Cliente> clienteItemWriter) {
-        return new StepBuilder("etapaProcessamentoClientes", jobRepository)
+            ClienteItemProcessor clienteItemProcessor,
+            RegistroIgnoradoListener listenerRegistroIgnorado,
+            @Qualifier("customerItemWriterProtegido") ItemWriter<Cliente> clienteItemWriter) {
+
+        return new StepBuilder(
+                "etapaProcessamentoClientes",
+                jobRepository)
                 .<RegistroClienteCsv, Cliente>chunk(10, transactionManager)
                 .reader(clienteItemReader)
                 .processor(clienteItemProcessor)
@@ -45,4 +52,13 @@ public class ProcessamentoClienteStepConfig {
                 .writer(clienteItemWriter)
                 .build();
     }
+
+    @Bean
+    public InitializingBean verificarTransactionManager() {
+
+        return () -> log.info(
+                "TransactionManager utilizado pelo FilePulse: {}",
+                transactionManager.getClass().getName());
+    }
+
 }

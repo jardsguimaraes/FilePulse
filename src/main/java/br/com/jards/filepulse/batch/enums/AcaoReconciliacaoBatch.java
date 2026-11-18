@@ -1,0 +1,10 @@
+package br.com.jards.filepulse.batch.enums;
+
+public enum AcaoReconciliacaoBatch {
+    INVESTIGAR_EXECUCAO_AUSENTE,
+    VERIFICAR_FINALIZACAO,
+    VERIFICAR_FALHA,
+    VERIFICAR_INTERRUPCAO,
+    VERIFICAR_EXECUCAO_ATIVA,
+    INVESTIGAR_ESTADO_INDETERMINADO
+}
